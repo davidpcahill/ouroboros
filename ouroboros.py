@@ -46,6 +46,21 @@ def setup_logging():
 
 logger = setup_logging()
 
+# Version check
+def check_anthropic_version():
+    try:
+        import anthropic
+        required_version = "0.31.2"
+        if anthropic.__version__ < required_version:
+            logger.error(f"Anthropic version {anthropic.__version__} is below the required version {required_version}. Please upgrade.")
+            print(f"Anthropic library version {anthropic.__version__} is outdated. Please upgrade to version {required_version} or later.")
+            return False
+        return True
+    except ImportError:
+        logger.error("Anthropic library not found. Please install the library.")
+        print("Anthropic library not found. Please install the library.")
+        return False
+
 # Database functions
 def init_db():
     conn = None
@@ -221,12 +236,12 @@ def run_in_docker(client, dockerfile, code, exp_dir):
 # AI interaction functions
 def get_ai_response(prompt, api_key):
     try:
-        client = anthropic.Client(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key)
         logger.info("Sending request to AI...")
-        response = client.completion(
-            prompt=f"Human: {prompt}\n\nAssistant:",
+        response = client.completions.create(
             model="claude-3.5-sonnet-20240229",
             max_tokens_to_sample=100000,
+            prompt=f"Human: {prompt}\n\nAssistant:",
             stop_sequences=["Human:"]
         )
         logger.info("AI response received")
@@ -355,6 +370,7 @@ def run_experiment_cycle(docker_client):
         for action_count in range(1, max_actions + 1):
             time_elapsed = time.time() - start_time
             time_remaining = max(0, time_limit - time_elapsed)
+            time.sleep(1)  # Added delay between actions
 
             print_status_update(experiment_id, action_count, max_actions, time_remaining)
 
@@ -362,12 +378,16 @@ def run_experiment_cycle(docker_client):
                 logger.warning(f"Experiment {experiment_id} reached time limit.")
                 break
 
-            logger.info(f"Executing action {action_count} of {max_actions}")
             ai_response = get_ai_response(get_ai_prompt(
                 experiment_id, prev_data, action_history, current_dockerfile, 
                 action_count, max_actions, time_remaining, access
             ), access['ANTHROPIC_API_KEY'])
             
+            if ai_response.startswith("Error:"):
+                logger.error(f"AI response error: {ai_response}")
+                print(f"Error in AI response: {ai_response}")
+                continue
+
             logger.info(f"AI response received: {ai_response[:50]}...")  # Log first 50 chars of response
             
             if ai_response.startswith('[DOCKERFILE]'):

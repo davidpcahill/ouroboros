@@ -39,28 +39,30 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 
 4. Create a `config.ini` file in the project root with the following content:
 ```
-   [Anthropic]
-   API_KEY = your_anthropic_api_key_here
+[Anthropic]
+API_KEY = your_anthropic_api_key_here
 
-   [Google]
-   API_KEY = your_google_api_key_here
-   CSE_ID = your_custom_search_engine_id_here
+[Google] # Optional
+API_KEY = your_google_api_key_here
+CSE_ID = your_custom_search_engine_id_here
+MaxResults = 5
 
-   [Docker]
-   MemoryLimit = 512m
-   CPUQuota = 50000
-   Timeout = 300
-   NetworkAccess = false
+[Docker]
+MemoryLimit = 512m
+CPUQuota = 50000
+Timeout = 300
+NetworkAccess = false
 
-   [Search]
-   MaxResults = 5
+[Search]
+MaxResults = 5
 
-   [Scheduling]
-   IntervalMinutes = 60
+[Scheduling]
+IntervalMinutes = 60
+RunFirstImmediately = true
 
-   [Experiment]
-   MaxActions = 10
-   TimeLimit = 3600
+[Experiment]
+MaxActions = 10
+TimeLimit = 3600
 ```
 
 5. (Optional) Create an `access.txt` file in the project root with any additional API keys or credentials you want to make available to the AI:

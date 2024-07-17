@@ -6,15 +6,15 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 
 ## Summary
 
-**Ouroboros** is an autonomous AI system designed to help automate AI research and development. Leveraging the advanced capabilities of the Claude 3.5 model, Ouroboros conducts experiments, analyzes results, and iteratively improves upon its own knowledge and capabilities. This self-improving cycle mimics the ouroboros symbol, representing eternal growth and evolution in AI.
+**Ouroboros** is an autonomous AI system designed to help automate AI research and development. Leveraging the advanced capabilities of large language models like Claude 3.5 and GPT-4, Ouroboros conducts experiments, analyzes results, and iteratively improves upon its own knowledge and capabilities. This self-improving cycle mimics the ouroboros symbol, representing eternal growth and evolution in AI.
 
 ## Features
 
-- **Advanced AI Model**: Utilizes the Claude 3.5 model for sophisticated reasoning and decision-making.
+- **Flexible AI Model Support**: Utilizes either Claude (Anthropic) or GPT (OpenAI) models for sophisticated reasoning and decision-making.
 - **Sandboxed Environment**: Executes code safely within Docker containers, ensuring system integrity.
 - **Version Control**: Integrates with Git to maintain a comprehensive history of all experiments.
 - **Persistent Storage**: Uses SQLite to store experiment results, metadata, and AI insights.
-- **Configurable Parameters**: Allows fine-tuning of experiment duration, action limits, and resource allocation.
+- **Configurable Parameters**: Allows fine-tuning of experiment duration, action limits, resource allocation, and AI model selection.
 - **Knowledge Retention**: Can search and reference previous experiments for continuous learning.
 - **Internet Research**: Capable of performing Google searches and loading webpage content for information gathering.
 - **Automated Cycle Management**: Schedules and executes experiment cycles with minimal human intervention.
@@ -54,7 +54,9 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 - **Python 3.9+**: Ensure you have Python version 3.9 or later installed.
 - **Docker**: Install Docker to run experiments in a secure, sandboxed environment.
 - **Git**: Git is required for version control of experiment history.
-- **Sufficient Disk Space**: Ensure you have enough disk space to store AI-generated images and experiment results.
+- **Sufficient Disk Space**: Ensure you have enough disk space to store experiment results and logs.
+- **Anthropic API Key**: Required **if** leveraging Claude AI models.
+- **OpenAI API Key**: Required **if** leveraging OpenAI AI models.
 - **Google API Key and Custom Search Engine ID** (optional): These are required for enabling the Google search feature.
    > **Note:** The Google API feature is optional and not required for the base functionality of Ouroboros.
 
@@ -74,10 +76,19 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 
 4. Create a `config.ini` file in the project root with the following content:
 ```
+[AI]
+PROVIDER = claude  # Options: claude, openai
+
 [Anthropic]
 API_KEY = your_anthropic_api_key_here
 MODEL = claude-3-5-sonnet-20240620
 MAX_OUTPUT_TOKENS = 4096
+TEMPERATURE = 0.7
+
+[OpenAI]
+API_KEY = your_openai_api_key_here
+MODEL = gpt-3.5-turbo
+MAX_TOKENS = 4096
 TEMPERATURE = 0.7
 
 [Google]
@@ -90,6 +101,8 @@ MemoryLimit = 512m
 CPUQuota = 50000
 Timeout = 300
 NetworkAccess = false
+EnableCleanup = true
+KeepLastNImages = 5
 
 [Search]
 MaxResults = 5
@@ -100,6 +113,7 @@ RunFirstImmediately = true
 
 [Experiment]
 MaxActions = 10
+MaxErrors = 3
 TimeLimit = 3600
 ```
 > **Note:** You can use config.ini.example as a template.
@@ -118,7 +132,9 @@ TimeLimit = 3600
 
 You can adjust the following parameter sections in the `config.ini` file:
 
-- `Anthropic`: Set your Claude API key
+- `AI`: Choose the AI provider (claude or openai)
+- `Anthropic`: Set your Claude API key and model parameters
+- `OpenAI`: Set your OpenAI API key and model parameters
 - `Google`: Set your Google API key and Custom Search Engine ID for the Google search feature
 - `Docker`: Configure resource limits for Docker containers
 - `Search`: Set the maximum number of results returned by the experiment knowledge search function

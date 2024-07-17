@@ -479,6 +479,8 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     Current Dockerfile:
     {current_dockerfile}
 
+    IMPORTANT: You have full control over the Dockerfile. You can modify it using the [DOCKERFILE] action.
+
     Available API Keys and Credentials:
     {json.dumps(access_info, indent=2)}
 
@@ -495,6 +497,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     6. [FINALIZE] <notes>
 
     Your response MUST start with one of these tags. Do not include any other text before the tag.
+    When providing code for the [RUN] action, DO NOT include markdown code block delimiters (```). Provide only the raw Python code.
 
     Additional Information:
     - Your code runs in an isolated Docker container. Specify your desired environment in the Dockerfile.
@@ -614,6 +617,8 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     def handle_run_action(response):
         nonlocal results
         code = response[5:].strip()
+        # Remove markdown code block delimiters if present
+        code = code.replace('```python', '').replace('```', '').strip()
         code_path = os.path.join(exp_dir, 'experiment.py')
         os.makedirs(os.path.dirname(code_path), exist_ok=True)
         with open(code_path, 'w') as f:

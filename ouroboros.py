@@ -79,7 +79,6 @@ MODEL_MAX_OUTPUT_TOKENS = {
     "gpt-4-32k": 8192,
 }
 
-# Version check
 def check_ai_libraries():
     ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
     if ai_provider == 'claude':
@@ -98,6 +97,11 @@ def check_ai_libraries():
     elif ai_provider == 'openai':
         try:
             import openai
+            required_version = "1.35.14"
+            if openai.__version__ < required_version:
+                logger.error(f"OpenAI version {openai.__version__} is below the required version {required_version}. Please upgrade.")
+                print(f"OpenAI library version {openai.__version__} is outdated. Please upgrade to version {required_version} or later.")
+                return False
             return True
         except ImportError:
             logger.error("OpenAI library not found. Please install the library.")

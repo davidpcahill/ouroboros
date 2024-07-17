@@ -13,6 +13,7 @@ import schedule
 import json
 from datetime import datetime
 import anthropic
+import openai
 import git
 import docker
 import io
@@ -50,34 +51,59 @@ logger = setup_logging()
 
 # Model token limits
 MODEL_MAX_INPUT_TOKENS = {
+    # Claude models
     "claude-2.1": 100000,
     "claude-3-haiku-20240307": 200000,
     "claude-3-sonnet-20240229": 200000,
     "claude-3-opus-20240229": 200000,
     "claude-3-5-sonnet-20240620": 200000,
+    # OpenAI models
+    "gpt-3.5-turbo": 4096,
+    "gpt-3.5-turbo-16k": 16384,
+    "gpt-4": 8192,
+    "gpt-4-32k": 32768,
 }
 
 MODEL_MAX_OUTPUT_TOKENS = {
+    # Claude models
     "claude-2.1": 100000,
     "claude-3-haiku-20240307": 4096,
     "claude-3-sonnet-20240229": 4096,
     "claude-3-opus-20240229": 4096,
     "claude-3-5-sonnet-20240620": 4096,
+    # OpenAI models
+    "gpt-3.5-turbo": 4096,
+    "gpt-3.5-turbo-16k": 4096,
+    "gpt-4": 8192,
+    "gpt-4-32k": 8192,
 }
 
 # Version check
-def check_anthropic_version():
-    try:
-        import anthropic
-        required_version = "0.31.2"
-        if anthropic.__version__ < required_version:
-            logger.error(f"Anthropic version {anthropic.__version__} is below the required version {required_version}. Please upgrade.")
-            print(f"Anthropic library version {anthropic.__version__} is outdated. Please upgrade to version {required_version} or later.")
+def check_ai_libraries():
+    ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
+    if ai_provider == 'claude':
+        try:
+            import anthropic
+            required_version = "0.31.2"
+            if anthropic.__version__ < required_version:
+                logger.error(f"Anthropic version {anthropic.__version__} is below the required version {required_version}. Please upgrade.")
+                print(f"Anthropic library version {anthropic.__version__} is outdated. Please upgrade to version {required_version} or later.")
+                return False
+            return True
+        except ImportError:
+            logger.error("Anthropic library not found. Please install the library.")
+            print("Anthropic library not found. Please install the library.")
             return False
-        return True
-    except ImportError:
-        logger.error("Anthropic library not found. Please install the library.")
-        print("Anthropic library not found. Please install the library.")
+    elif ai_provider == 'openai':
+        try:
+            import openai
+            return True
+        except ImportError:
+            logger.error("OpenAI library not found. Please install the library.")
+            print("OpenAI library not found. Please install the library.")
+            return False
+    else:
+        logger.error(f"Unsupported AI provider: {ai_provider}")
         return False
 
 # Database functions
@@ -115,7 +141,17 @@ def get_last_experiment_id():
 def read_access():
     try:
         with open('access.txt', 'r') as f:
-            return {line.split('=')[0].strip(): line.split('=')[1].strip() for line in f if '=' in line}
+            access_info = {line.split('=')[0].strip(): line.split('=')[1].strip() for line in f if '=' in line}
+        
+        ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
+        if ai_provider == 'claude':
+            if 'ANTHROPIC_API_KEY' not in access_info:
+                logger.error("ANTHROPIC_API_KEY not found in access.txt")
+        elif ai_provider == 'openai':
+            if 'OPENAI_API_KEY' not in access_info:
+                logger.error("OPENAI_API_KEY not found in access.txt")
+        
+        return access_info
     except FileNotFoundError:
         logger.error("access.txt file not found")
         return {}
@@ -330,6 +366,18 @@ def log_docker_resource_usage():
 
 # AI interaction functions
 def get_ai_response(prompt, api_key):
+    ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
+    
+    if ai_provider == 'claude':
+        return get_claude_response(prompt, api_key)
+    elif ai_provider == 'openai':
+        return get_openai_response(prompt, api_key)
+    else:
+        error_message = f"Unsupported AI provider: {ai_provider}"
+        logger.error(error_message)
+        return f"Error: {error_message}"
+
+def get_claude_response(prompt, api_key):
     try:
         client = anthropic.Anthropic(api_key=api_key)
         model = config.get('Anthropic', 'MODEL', fallback='claude-2.1')
@@ -339,7 +387,7 @@ def get_ai_response(prompt, api_key):
         )
         temperature = float(config.get('Anthropic', 'TEMPERATURE', fallback='0.7'))
         
-        logger.info(f"Sending request to AI using model: {model} with max_output_tokens: {max_output_tokens}")
+        logger.info(f"Sending request to Claude AI using model: {model} with max_output_tokens: {max_output_tokens}")
         
         if model.startswith("claude-3"):
             # Use Messages API for Claude 3.x models
@@ -363,13 +411,39 @@ def get_ai_response(prompt, api_key):
             )
             response_content = response.completion
         
-        logger.info("AI response received")
+        logger.info("Claude AI response received")
         return response_content
     except anthropic.APIError as e:
         logger.error(f"Anthropic API error: {str(e)}")
         return f"Error: Anthropic API error - {str(e)}"
     except Exception as e:
-        logger.error(f"Error getting AI response: {str(e)}")
+        logger.error(f"Error getting Claude AI response: {str(e)}")
+        return f"Error: {str(e)}"
+
+def get_openai_response(prompt, api_key):
+    try:
+        client = openai.OpenAI(api_key=api_key)
+        model = config.get('OpenAI', 'MODEL', fallback='gpt-3.5-turbo')
+        max_tokens = int(config.get('OpenAI', 'MAX_TOKENS', fallback='4096'))
+        temperature = float(config.get('OpenAI', 'TEMPERATURE', fallback='0.7'))
+        
+        logger.info(f"Sending request to OpenAI using model: {model} with max_tokens: {max_tokens}")
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        
+        response_content = response.choices[0].message.content
+        logger.info("OpenAI response received")
+        return response_content
+    except openai.OpenAIError as e:
+        logger.error(f"OpenAI API error: {str(e)}")
+        return f"Error: OpenAI API error - {str(e)}"
+    except Exception as e:
+        logger.error(f"Error getting OpenAI response: {str(e)}")
         return f"Error: {str(e)}"
 
 def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, current_action, max_actions, time_remaining, access_info):
@@ -578,6 +652,9 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         '[FINALIZE]': handle_finalize_action
     }
 
+    ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
+    api_key = access['ANTHROPIC_API_KEY'] if ai_provider == 'claude' else access['OPENAI_API_KEY']
+
     for action_count in range(1, max_actions + 1):
         time_elapsed = time.time() - start_time
         time_remaining = max(0, time_limit - time_elapsed)
@@ -592,7 +669,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         ai_response = get_ai_response(get_ai_prompt(
             experiment_id, prev_data, action_history, current_dockerfile, 
             action_count, max_actions, time_remaining, access
-        ), access['ANTHROPIC_API_KEY'])
+        ), api_key)
         
         logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
         
@@ -642,7 +719,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         Based on these actions, results, and the current Dockerfile, please provide final notes for the next AI to continue from this point.
         Your response MUST start with [FINALIZE] followed by your notes.
         """
-        final_response = get_ai_response(final_prompt, access['ANTHROPIC_API_KEY'])
+        final_response = get_ai_response(final_prompt, api_key)
         logger.info(f"Final AI response:\n{final_response}")  # Log the full final response
         if final_response.startswith('[FINALIZE]'):
             ai_notes = final_response[10:].strip()
@@ -667,7 +744,11 @@ def run_experiment_cycle(docker_client):
     experiment_id = get_last_experiment_id() + 1
     logger.info(f"Experiment ID: {experiment_id}")
     
-    temperature = config.get('Anthropic', 'TEMPERATURE', fallback='0.7')
+    ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
+    if ai_provider == 'claude':
+        temperature = config.get('Anthropic', 'TEMPERATURE', fallback='0.7')
+    else:
+        temperature = config.get('OpenAI', 'TEMPERATURE', fallback='0.7')
     logger.info(f"Current AI temperature setting: {temperature}")
     
     repo, repo_dir = init_git_repo()
@@ -693,7 +774,7 @@ def run_experiment_cycle(docker_client):
 
 # Main function
 def main():
-    if not check_anthropic_version():
+    if not check_ai_libraries():
         return
     
     init_db()

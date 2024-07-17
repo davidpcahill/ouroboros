@@ -9,7 +9,7 @@ TEMPERATURE = 0.7
 
 [OpenAI]
 API_KEY = your_openai_api_key_here
-MODEL = gpt-3.5-turbo
+MODEL = gpt-4o
 MAX_TOKENS = 4096
 TEMPERATURE = 0.7
 

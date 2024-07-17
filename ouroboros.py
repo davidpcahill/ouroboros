@@ -322,13 +322,15 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
 
     You have access to a sandbox environment where you can run any Python code. You can use external libraries and APIs as needed. Be creative and ambitious in your experiments, but also considerate of potential risks and ethical implications.
 
-    You can perform the following actions:
-    1. [DOCKERFILE] <dockerfile content>: Specify the Dockerfile for your experiment environment.
-    2. [RUN] <code>: Execute Python code in the sandbox. The code will be run with a {config.get('Docker', 'Timeout', fallback='300')}-second timeout.
-    3. [SEARCH] <query>: Search previous experiments for relevant information. This will return up to {config.get('Search', 'MaxResults', fallback='5')} most relevant experiments.
-    4. [GOOGLE] <query>: Perform a Google search and get up to {config.get('Google', 'MaxResults', fallback='5')} results.
-    5. [LOADURL] <url>: Load and summarize the content of a webpage.
-    6. [FINALIZE] <notes>: End the current experiment and provide notes for future reference.
+    IMPORTANT: You MUST respond with one of the following action tags:
+    1. [DOCKERFILE] <dockerfile content>
+    2. [RUN] <code>
+    3. [SEARCH] <query>
+    4. [GOOGLE] <query>
+    5. [LOADURL] <url>
+    6. [FINALIZE] <notes>
+
+    Your response MUST start with one of these tags. Do not include any other text before the tag.
 
     Additional Information:
     - Your code runs in an isolated Docker container. Specify your desired environment in the Dockerfile.
@@ -345,7 +347,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     - Humans may review your notes periodically. Feel free to communicate your thoughts and requests.
     - Your goal is continuous self-improvement. Always strive to build upon your past experiments and knowledge.
 
-    What would you like to do next in this experiment?
+    What would you like to do next in this experiment? Remember to start your response with one of the action tags listed above.
     """
 
 # Action functions
@@ -386,8 +388,10 @@ def run_experiment_cycle(docker_client):
     access = read_access()
     experiment_id = get_last_experiment_id() + 1
     logger.info(f"Experiment ID: {experiment_id}")
+    
     temperature = config.get('Anthropic', 'TEMPERATURE', fallback='0.7')
-    logger.info(f"Current AI temperature setting: {temperature}")    
+    logger.info(f"Current AI temperature setting: {temperature}")
+    
     repo = init_git_repo()
 
     exp_dir = os.path.join('experiments', f'experiment_{experiment_id}')
@@ -429,6 +433,8 @@ def run_experiment_cycle(docker_client):
                 experiment_id, prev_data, action_history, current_dockerfile, 
                 action_count, max_actions, time_remaining, access
             ), access['ANTHROPIC_API_KEY'])
+            
+            logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
             
             if ai_response.startswith("Error:"):
                 logger.error(f"AI response error: {ai_response}")
@@ -487,41 +493,56 @@ def run_experiment_cycle(docker_client):
                 conn.commit()
                 commit_to_git(repo, f"Experiment {experiment_id}: Finalize")
                 logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
-                return  # Exit the function early if finalized
+                break  # Exit the loop if finalized
             else:
-                results = f"Unknown action in AI response: {ai_response[:20]}..."
+                results = f"Unknown action in AI response: {ai_response[:100]}..."
                 logger.warning(results)
                 action_history.append({"action": "UNKNOWN", "response": ai_response, "results": results})
 
         # If we've reached this point, we've hit the max actions limit or time limit
-        logger.warning(f"Experiment {experiment_id} ended without explicit finalization.")
-        final_prompt = f"""
-        Experiment #{experiment_id} has ended without explicit finalization.
-        
-        Final Status:
-        - Actions taken: {len(action_history)} of {max_actions}
-        - Time remaining: {max(0, time_limit - (time.time() - start_time)):.2f} seconds
+        if not ai_response.startswith('[FINALIZE]'):
+            logger.warning(f"Experiment {experiment_id} ended without explicit finalization.")
+            final_prompt = f"""
+            Experiment #{experiment_id} has ended without explicit finalization.
+            
+            Final Status:
+            - Actions taken: {len(action_history)} of {max_actions}
+            - Time remaining: {max(0, time_limit - (time.time() - start_time)):.2f} seconds
 
-        Here's a summary of your actions and their results:
-        {json.dumps(action_history, indent=2)}
+            Here's a summary of your actions and their results:
+            {json.dumps(action_history, indent=2)}
 
-        Current Dockerfile:
-        {current_dockerfile}
+            Current Dockerfile:
+            {current_dockerfile}
+            
+            Based on these actions, results, and the current Dockerfile, please provide final notes for the next AI to continue from this point.
+            Your response MUST start with [FINALIZE] followed by your notes.
+            """
+            final_response = get_ai_response(final_prompt, access['ANTHROPIC_API_KEY'])
+            logger.info(f"Final AI response:\n{final_response}")  # Log the full final response
+            if final_response.startswith('[FINALIZE]'):
+                ai_notes = final_response[10:].strip()
+            else:
+                ai_notes = "AI failed to provide final notes after experiment ended."
+            
+            c.execute("INSERT INTO experiments (id, code, results, ai_notes, dockerfile, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                      (experiment_id, json.dumps(action_history), results, ai_notes, current_dockerfile, datetime.now().isoformat()))
+            conn.commit()
+            commit_to_git(repo, f"Experiment {experiment_id}: Forced finalization")
+            logger.info(f"Experiment {experiment_id} forcefully finalized. Waiting for next cycle...")
         
-        Based on these actions, results, and the current Dockerfile, please provide final notes for the next AI to continue from this point.
-        Your response should start with [FINALIZE] followed by your notes.
-        """
-        final_response = get_ai_response(final_prompt, access['ANTHROPIC_API_KEY'])
-        if final_response.startswith('[FINALIZE]'):
-            ai_notes = final_response[10:].strip()
-        else:
-            ai_notes = "AI failed to provide final notes after experiment ended."
-        
-        c.execute("INSERT INTO experiments (id, code, results, ai_notes, dockerfile, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                  (experiment_id, json.dumps(action_history), results, ai_notes, current_dockerfile, datetime.now().isoformat()))
-        conn.commit()
-        commit_to_git(repo, f"Experiment {experiment_id}: Forced finalization")
-        logger.info(f"Experiment {experiment_id} forcefully finalized. Waiting for next cycle...")
+        # Save full experiment log
+        log_path = os.path.join(exp_dir, 'experiment_log.txt')
+        with open(log_path, 'w') as f:
+            json.dump({
+                "experiment_id": experiment_id,
+                "action_history": action_history,
+                "results": results,
+                "ai_notes": ai_notes,
+                "dockerfile": current_dockerfile
+            }, f, indent=2)
+        logger.info(f"Experiment log saved to {log_path}")
+        commit_to_git(repo, f"Experiment {experiment_id}: Save experiment log", [log_path])
     
     except Exception as e:
         logger.error(f"Error in experiment cycle: {str(e)}")

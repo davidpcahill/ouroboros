@@ -122,21 +122,21 @@ def read_access():
 # Git functions
 def init_git_repo():
     try:
-        exp_dir = 'experiments'
+        exp_dir = os.path.abspath('experiments')
         if not os.path.exists(exp_dir):
             os.makedirs(exp_dir)
         
         repo_path = os.path.join(exp_dir, '.git')
         if not os.path.exists(repo_path):
             repo = git.Repo.init(exp_dir)
-            logger.info("Initialized new Git repository in experiments directory")
+            logger.info(f"Initialized new Git repository in {exp_dir}")
         else:
             repo = git.Repo(exp_dir)
-            logger.info("Using existing Git repository in experiments directory")
-        return repo
+            logger.info(f"Using existing Git repository in {exp_dir}")
+        return repo, exp_dir
     except git.exc.GitCommandError as e:
         logger.error(f"Git repository initialization error: {e}")
-        return None
+        return None, None
 
 def commit_to_git(repo, message, files_to_add=None):
     if repo is None:
@@ -398,15 +398,18 @@ def run_experiment_cycle(docker_client):
     temperature = config.get('Anthropic', 'TEMPERATURE', fallback='0.7')
     logger.info(f"Current AI temperature setting: {temperature}")
     
-    repo = init_git_repo()
+    repo, repo_dir = init_git_repo()
+    if repo is None or repo_dir is None:
+        logger.error("Failed to initialize Git repository. Exiting experiment cycle.")
+        return
 
-    exp_dir = os.path.join('experiments', f'experiment_{experiment_id}')
+    exp_dir = os.path.abspath(os.path.join(repo_dir, f'experiment_{experiment_id}'))
     os.makedirs(exp_dir, exist_ok=True)
     logger.info(f"Created experiment directory: {exp_dir}")
 
     # Check if the experiment directory is within the Git repository
-    if not os.path.commonpath([exp_dir, repo.working_tree_dir]) == repo.working_tree_dir:
-        logger.error(f"Experiment directory {exp_dir} is not within the Git repository")
+    if not exp_dir.startswith(repo_dir):
+        logger.error(f"Experiment directory {exp_dir} is not within the Git repository {repo_dir}")
         return
 
     conn = None

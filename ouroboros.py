@@ -265,6 +265,8 @@ def create_docker_client():
         return None
 
 def run_in_docker(client, dockerfile, code, exp_dir):
+    container = None
+    image = None
     try:
         # Create experiment.py file
         code_path = os.path.join(exp_dir, 'experiment.py')
@@ -280,10 +282,11 @@ def run_in_docker(client, dockerfile, code, exp_dir):
         
         logger.info("Building Docker image...")
         image, _ = client.images.build(
-            path=exp_dir,  # Use the experiment directory as build context
-            dockerfile='Dockerfile',  # Use the Dockerfile we just created
+            path=exp_dir,
+            dockerfile='Dockerfile',
             rm=True
         )
+        logger.info(f"Docker image built successfully: {image.id}")
         
         network_mode = 'none' if config.getboolean('Docker', 'NetworkAccess', fallback=False) == False else 'bridge'
         
@@ -296,28 +299,39 @@ def run_in_docker(client, dockerfile, code, exp_dir):
             cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
             network_mode=network_mode
         )
-    
-        try:
-            logger.info("Starting Docker container...")
-            container.start()
-            container.wait(timeout=int(config.get('Docker', 'Timeout', fallback='300')))
-            output = container.logs().decode('utf-8')
-            logger.info("Docker container execution completed")
-        finally:
-            logger.info("Removing Docker container and image...")
-            container.remove()
-            image.remove()
+        logger.info(f"Docker container created: {container.id}")
         
+        logger.info("Starting Docker container...")
+        container.start()
+        logger.info("Docker container started successfully")
+        
+        timeout = int(config.get('Docker', 'Timeout', fallback='300'))
+        logger.info(f"Waiting for container to complete (timeout: {timeout}s)...")
+        result = container.wait(timeout=timeout)
+        
+        if result['StatusCode'] != 0:
+            logger.warning(f"Container exited with non-zero status code: {result['StatusCode']}")
+        
+        output = container.logs().decode('utf-8')
+        logger.info("Docker container execution completed")
         return output
+    
+    except docker.errors.BuildError as e:
+        logger.error(f"Docker build error: {e}")
+        return str(e)
     except docker.errors.APIError as e:
         logger.error(f"Docker API error: {e}")
-        return str(e)
-    except IOError as e:
-        logger.error(f"File operation error: {e}")
         return str(e)
     except Exception as e:
         logger.error(f"Unexpected error in Docker execution: {e}")
         return f"Unexpected error: {e}"
+    finally:
+        if container:
+            logger.info(f"Removing Docker container: {container.id}")
+            container.remove(force=True)
+        if image:
+            logger.info(f"Removing Docker image: {image.id}")
+            client.images.remove(image.id, force=True)
 
 def cleanup_docker_resources():
     if not config.getboolean('Docker', 'EnableCleanup', fallback=False):
@@ -477,8 +491,13 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     Current Dockerfile:
     {current_dockerfile}
 
-    IMPORTANT: You have full control over the Dockerfile. You can modify it using the [DOCKERFILE] action.
-
+    IMPORTANT:
+    - You have full control over the Dockerfile. You can modify it using the [DOCKERFILE] action.
+    - After each [RUN] action, wait for the results before proceeding to the next action.
+    - The Docker container will be built, started, and stopped for each [RUN] action.
+    - You will receive the output of your code execution before being prompted for the next action.
+    - You can search previous experiments, use Google search, and load webpages using the respective actions.
+    
     Available API Keys and Credentials:
     {json.dumps(access_info, indent=2)}
 

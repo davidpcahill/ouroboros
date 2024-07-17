@@ -51,10 +51,12 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 
 ## Prerequisites
 
-- Python 3.9+
-- Docker
-- Git
-- Google API key and Custom Search Engine ID (optional, for Google search feature)
+- **Python 3.9+**: Ensure you have Python version 3.9 or later installed.
+- **Docker**: Install Docker to run experiments in a secure, sandboxed environment.
+- **Git**: Git is required for version control of experiment history.
+- **Sufficient Disk Space**: Ensure you have enough disk space to store AI-generated images and experiment results.
+- **Google API Key and Custom Search Engine ID** (optional): These are required for enabling the Google search feature.
+   > **Note:** The Google API feature is optional and not required for the base functionality of Ouroboros.
 
 ## Installation
 

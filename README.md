@@ -22,6 +22,8 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 
 ## How It Works
 
+<img src="workflow.png" alt="Ouroboros Workflow" height="600"/>
+
 1. **Initialization**: The system sets up the database, Git repository, and Docker environment.
 2. **Experiment Cycle**:
    - Retrieves context from previous experiments

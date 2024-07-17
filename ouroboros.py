@@ -119,6 +119,13 @@ def read_access():
         logger.error("access.txt file not found")
         return {}
 
+def check_disk_space(min_space_gb=10):
+    total, used, free = shutil.disk_usage("/")
+    free_gb = free // (2**30)
+    if free_gb < min_space_gb:
+        logger.warning(f"Low disk space: {free_gb}GB free. Minimum recommended: {min_space_gb}GB")
+    return free_gb
+
 # Git functions
 def init_git_repo():
     try:
@@ -232,7 +239,7 @@ def run_in_docker(client, dockerfile, code, exp_dir):
             cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
             network_mode=network_mode
         )
-        
+    
         try:
             code_path = os.path.join(exp_dir, 'experiment.py')
             with open(code_path, 'w') as f:
@@ -255,6 +262,15 @@ def run_in_docker(client, dockerfile, code, exp_dir):
     except IOError as e:
         logger.error(f"File operation error: {e}")
         return str(e)
+    except docker.errors.ImageBuildError as e:
+        logger.error(f"Docker image build error: {e}")
+        return f"Docker image build error: {e}"
+    except docker.errors.ContainerError as e:
+        logger.error(f"Docker container error: {e}")
+        return f"Docker container error: {e}"
+    except Exception as e:
+        logger.error(f"Unexpected error in Docker execution: {e}")
+        return f"Unexpected error: {e}"
 
 # AI interaction functions
 def get_ai_response(prompt, api_key):
@@ -390,6 +406,10 @@ def print_status_update(experiment_id, action_count, max_actions, time_remaining
 
 # Main experiment cycle
 def run_experiment_cycle(docker_client):
+    free_space = check_disk_space()
+    if free_space < 5:  # 5GB as an example threshold
+        logger.error("Not enough disk space to run experiment. Aborting.")
+        return
     logger.info("Starting new experiment cycle")
     access = read_access()
     experiment_id = get_last_experiment_id() + 1

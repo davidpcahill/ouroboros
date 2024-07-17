@@ -101,6 +101,7 @@ MaxActions = 10
 TimeLimit = 3600
 ```
 > **Note:** You can use config.ini.example as a template.
+
 > **Note:** The Google API section is optional and not required for the base functionality of Ouroboros.
 
 5. (Optional) Create an `access.txt` file in the project root to include any additional API keys or credentials you want to make available to the AI during experiments. Use the following format:

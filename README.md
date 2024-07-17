@@ -100,7 +100,7 @@ RunFirstImmediately = true
 MaxActions = 10
 TimeLimit = 3600
 ```
-> **Note:** The Google API feature is optional and not required for the base functionality of Ouroboros.
+> **Note:** The Google API section is optional and not required for the base functionality of Ouroboros.
 
 5. (Optional) Create an `access.txt` file in the project root with any additional API keys or credentials you want to make available to the AI:
    SOME_API_KEY=your_api_key_here

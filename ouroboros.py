@@ -323,12 +323,15 @@ def print_status_update(experiment_id, action_count, max_actions, time_remaining
 
 # Main experiment cycle
 def run_experiment_cycle(docker_client):
+    logger.info("Starting new experiment cycle")
     access = read_access()
     experiment_id = get_last_experiment_id() + 1
+    logger.info(f"Experiment ID: {experiment_id}")
     repo = init_git_repo()
 
     exp_dir = os.path.join('experiments', f'experiment_{experiment_id}')
     os.makedirs(exp_dir, exist_ok=True)
+    logger.info(f"Created experiment directory: {exp_dir}")
 
     conn = None
     try:
@@ -359,10 +362,13 @@ def run_experiment_cycle(docker_client):
                 logger.warning(f"Experiment {experiment_id} reached time limit.")
                 break
 
+            logger.info(f"Executing action {action_count} of {max_actions}")
             ai_response = get_ai_response(get_ai_prompt(
                 experiment_id, prev_data, action_history, current_dockerfile, 
                 action_count, max_actions, time_remaining, access
             ), access['ANTHROPIC_API_KEY'])
+            
+            logger.info(f"AI response received: {ai_response[:50]}...")  # Log first 50 chars of response
             
             if ai_response.startswith('[DOCKERFILE]'):
                 current_dockerfile = ai_response[12:].strip()
@@ -466,11 +472,15 @@ def main():
 
     try:
         with tqdm(total=0, unit="cycles", desc="Running experiments") as pbar:
+            last_run = time.time()
             while True:
-                schedule.run_pending()
-                if schedule.jobs:
-                    pbar.total += 1
+                now = time.time()
+                if now - last_run >= interval_minutes * 60:
+                    logger.info("Starting new experiment cycle")
+                    run_experiment_cycle(docker_client)
+                    last_run = now
                     pbar.update(1)
+                schedule.run_pending()
                 time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Ouroboros system stopped by user.")

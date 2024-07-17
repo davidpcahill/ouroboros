@@ -240,7 +240,8 @@ def get_ai_response(prompt, api_key):
         logger.info("Sending request to AI...")
         response = client.completions.create(
             model=config.get('Anthropic', 'MODEL', fallback='claude-2.1'),
-            max_tokens_to_sample=config.get('Anthropic', 'MAX_TOKENS', fallback='100000'),
+            max_tokens_to_sample=int(config.get('Anthropic', 'MAX_TOKENS', fallback='100000')),
+            temperature=float(config.get('Anthropic', 'TEMPERATURE', fallback='0.7')),
             prompt=f"Human: {prompt}\n\nAssistant:",
             stop_sequences=["Human:"]
         )
@@ -345,6 +346,8 @@ def run_experiment_cycle(docker_client):
     access = read_access()
     experiment_id = get_last_experiment_id() + 1
     logger.info(f"Experiment ID: {experiment_id}")
+    temperature = config.get('Anthropic', 'TEMPERATURE', fallback='0.7')
+    logger.info(f"Current AI temperature setting: {temperature}")    
     repo = init_git_repo()
 
     exp_dir = os.path.join('experiments', f'experiment_{experiment_id}')

@@ -102,7 +102,7 @@ TimeLimit = 3600
 ```
 > **Note:** The Google API section is optional and not required for the base functionality of Ouroboros.
 
-5. (Optional) Create an `access.txt` file in the project root to include any additional API keys or credentials you want to make available to the AI. Use the following format:
+5. (Optional) Create an `access.txt` file in the project root to include any additional API keys or credentials you want to make available to the AI during experiements. Use the following format:
 
    ```plaintext
    [key]=[value]

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Ouroboros.py - An AI-driven self-improving experimentation system
 
+import io
 import os
 import sys
 import time
@@ -298,18 +299,12 @@ def run_in_docker(client, dockerfile, code, exp_dir):
             image.remove()
         
         return output
-    except docker.errors.DockerException as e:
-        logger.error(f"Docker execution error: {e}")
+    except docker.errors.APIError as e:
+        logger.error(f"Docker API error: {e}")
         return str(e)
     except IOError as e:
         logger.error(f"File operation error: {e}")
         return str(e)
-    except docker.errors.ImageBuildError as e:
-        logger.error(f"Docker image build error: {e}")
-        return f"Docker image build error: {e}"
-    except docker.errors.ContainerError as e:
-        logger.error(f"Docker container error: {e}")
-        return f"Docker container error: {e}"
     except Exception as e:
         logger.error(f"Unexpected error in Docker execution: {e}")
         return f"Unexpected error: {e}"

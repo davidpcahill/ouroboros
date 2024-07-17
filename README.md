@@ -30,11 +30,11 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
    cd ouroboros
 
 2. Create a virtual environment and activate it:
-   python -m venv venv
-   source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+   `python -m venv venv`
+   `source venv/bin/activate`  # On Windows, use `venv\Scripts\activate`
 
 3. Install the required packages:
-   pip install -r requirements.txt
+   `pip install -r requirements.txt`
 
 4. Create a `config.ini` file in the project root with the following content:
 ```

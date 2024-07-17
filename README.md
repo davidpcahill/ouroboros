@@ -33,7 +33,7 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 3. **Data Persistence**: Stores results in the database and commits to Git
 4. **Scheduling**: Waits for the configured interval before initiating the next cycle
 
-<img src="workflow.png" alt="Ouroboros Workflow" width="350"/>
+<img src="workflow.png" alt="Ouroboros Workflow" width="705"/>
 
 ## Ethical Considerations and Safety Measures
 

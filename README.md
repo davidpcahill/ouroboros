@@ -42,7 +42,7 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 [Anthropic]
 API_KEY = your_anthropic_api_key_here
 MODEL = claude-3-5-sonnet-20240620
-MAX_TOKENS = 100000
+MAX_OUTPUT_TOKENS = 4096
 TEMPERATURE = 0.7
 
 [Google]

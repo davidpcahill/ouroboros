@@ -46,6 +46,23 @@ def setup_logging():
 
 logger = setup_logging()
 
+# Model token limits
+MODEL_MAX_INPUT_TOKENS = {
+    "claude-2.1": 100000,
+    "claude-3-haiku-20240307": 200000,
+    "claude-3-sonnet-20240229": 200000,
+    "claude-3-opus-20240229": 200000,
+    "claude-3-5-sonnet-20240620": 200000,
+}
+
+MODEL_MAX_OUTPUT_TOKENS = {
+    "claude-2.1": 100000,
+    "claude-3-haiku-20240307": 4096,
+    "claude-3-sonnet-20240229": 4096,
+    "claude-3-opus-20240229": 4096,
+    "claude-3-5-sonnet-20240620": 4096,
+}
+
 # Version check
 def check_anthropic_version():
     try:
@@ -238,16 +255,19 @@ def get_ai_response(prompt, api_key):
     try:
         client = anthropic.Anthropic(api_key=api_key)
         model = config.get('Anthropic', 'MODEL', fallback='claude-2.1')
-        max_tokens = int(config.get('Anthropic', 'MAX_TOKENS', fallback='100000'))
+        max_output_tokens = min(
+            int(config.get('Anthropic', 'MAX_OUTPUT_TOKENS', fallback='4096')),
+            MODEL_MAX_OUTPUT_TOKENS.get(model, 4096)
+        )
         temperature = float(config.get('Anthropic', 'TEMPERATURE', fallback='0.7'))
         
-        logger.info(f"Sending request to AI using model: {model}")
+        logger.info(f"Sending request to AI using model: {model} with max_output_tokens: {max_output_tokens}")
         
         if model.startswith("claude-3"):
             # Use Messages API for Claude 3.x models
             message = client.messages.create(
                 model=model,
-                max_tokens=max_tokens,
+                max_tokens=max_output_tokens,
                 temperature=temperature,
                 messages=[
                     {"role": "user", "content": prompt}
@@ -258,7 +278,7 @@ def get_ai_response(prompt, api_key):
             # Use Completions API for Claude 2.x models
             response = client.completions.create(
                 model=model,
-                max_tokens_to_sample=max_tokens,
+                max_tokens_to_sample=max_output_tokens,
                 temperature=temperature,
                 prompt=f"Human: {prompt}\n\nAssistant:",
                 stop_sequences=["Human:"]

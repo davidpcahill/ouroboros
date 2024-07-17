@@ -271,12 +271,17 @@ def run_in_docker(client, dockerfile, code, exp_dir):
         with open(code_path, 'w') as f:
             f.write(code)
         
-        dockerfile_content = f"{dockerfile}\nCOPY experiment.py /app/experiment.py\nCMD [\"python\", \"/app/experiment.py\"]"
+        # Create a temporary Dockerfile
+        dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
+        with open(dockerfile_path, 'w') as f:
+            f.write(dockerfile)
+            f.write("\nCOPY experiment.py /app/experiment.py")
+            f.write("\nCMD [\"python\", \"/app/experiment.py\"]")
         
         logger.info("Building Docker image...")
         image, _ = client.images.build(
             path=exp_dir,  # Use the experiment directory as build context
-            dockerfile=io.BytesIO(dockerfile_content.encode()),
+            dockerfile='Dockerfile',  # Use the Dockerfile we just created
             rm=True
         )
         
@@ -302,6 +307,8 @@ def run_in_docker(client, dockerfile, code, exp_dir):
             logger.info("Removing Docker container and image...")
             container.remove()
             image.remove()
+            # Clean up the temporary Dockerfile
+            os.remove(dockerfile_path)
         
         return output
     except docker.errors.APIError as e:

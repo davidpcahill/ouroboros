@@ -273,6 +273,61 @@ def run_in_docker(client, dockerfile, code, exp_dir):
         logger.error(f"Unexpected error in Docker execution: {e}")
         return f"Unexpected error: {e}"
 
+def cleanup_docker_resources():
+    if not config.getboolean('Docker', 'EnableCleanup', fallback=False):
+        logger.info("Docker cleanup is disabled. Skipping.")
+        return
+
+    keep_last_n = config.getint('Docker', 'KeepLastNImages', fallback=5)
+    try:
+        client = docker.from_env()
+
+        # Remove old containers
+        containers = client.containers.list(all=True)
+        for container in containers:
+            if container.status == 'exited':
+                container.remove()
+                logger.info(f"Removed Docker container: {container.id}")
+
+        # Remove dangling images
+        images = client.images.list(filters={'dangling': True})
+        for image in images:
+            client.images.remove(image.id)
+            logger.info(f"Removed dangling Docker image: {image.id}")
+
+        # Remove old images, keeping the last n
+        images = client.images.list()
+        sorted_images = sorted(images, key=lambda x: x.attrs['Created'], reverse=True)
+        for image in sorted_images[keep_last_n:]:
+            try:
+                client.images.remove(image.id)
+                logger.info(f"Removed old Docker image: {image.id}")
+            except docker.errors.APIError as e:
+                logger.warning(f"Could not remove Docker image {image.id}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error during Docker resource cleanup: {e}")
+
+def log_docker_resource_usage():
+    try:
+        client = docker.from_env()
+        
+        # Log container usage
+        containers = client.containers.list(all=True)
+        logger.info(f"Total containers: {len(containers)}")
+        logger.info(f"Running containers: {len([c for c in containers if c.status == 'running'])}")
+        
+        # Log image usage
+        images = client.images.list()
+        logger.info(f"Total images: {len(images)}")
+        
+        # Log disk usage
+        total, used, free = shutil.disk_usage("/")
+        logger.info(f"Disk usage: {used // (2**30)}GB used, {free // (2**30)}GB free")
+    
+    except Exception as e:
+        logger.error(f"Error logging Docker resource usage: {e}")
+
 # AI interaction functions
 def get_ai_response(prompt, api_key):
     try:
@@ -405,12 +460,208 @@ def print_status_update(experiment_id, action_count, max_actions, time_remaining
     sys.stdout.flush()
     logger.info(status_message.strip())
 
+# Experiment functions
+def setup_experiment(experiment_id, repo_dir):
+    exp_dir = os.path.abspath(os.path.join(repo_dir, f'experiment_{experiment_id}'))
+    os.makedirs(exp_dir, exist_ok=True)
+    logger.info(f"Created experiment directory: {exp_dir}")
+
+    if not exp_dir.startswith(repo_dir):
+        raise ValueError(f"Experiment directory {exp_dir} is not within the Git repository {repo_dir}")
+
+    return exp_dir
+
+def get_previous_experiment_data(experiment_id):
+    with sqlite3.connect('ouroboros.db') as conn:
+        c = conn.cursor()
+        c.execute("SELECT code, results, ai_notes, dockerfile FROM experiments WHERE id = ?", (experiment_id - 1,))
+        return c.fetchone()
+
+def save_experiment_results(experiment_id, action_history, results, ai_notes, dockerfile):
+    with sqlite3.connect('ouroboros.db') as conn:
+        c = conn.cursor()
+        c.execute("INSERT INTO experiments (id, code, results, ai_notes, dockerfile, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                  (experiment_id, json.dumps(action_history), results, ai_notes, dockerfile, datetime.now().isoformat()))
+        conn.commit()
+
+def save_experiment_log(exp_dir, experiment_id, action_history, results, ai_notes, dockerfile):
+    log_path = os.path.join(exp_dir, 'experiment_log.txt')
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    with open(log_path, 'w') as f:
+        json.dump({
+            "experiment_id": experiment_id,
+            "action_history": action_history,
+            "results": results,
+            "ai_notes": ai_notes,
+            "dockerfile": dockerfile
+        }, f, indent=2)
+    logger.info(f"Experiment log saved to {log_path}")
+    return log_path
+
 # Main experiment cycle
+def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, docker_client):
+    action_history = []
+    current_dockerfile = "FROM python:3.9-slim\nWORKDIR /app\n"
+    results = ""
+    ai_notes = ""
+
+    max_actions = int(config.get('Experiment', 'MaxActions', fallback='10'))
+    time_limit = float(config.get('Experiment', 'TimeLimit', fallback='3600'))
+    start_time = time.time()
+    error_count = 0
+    max_errors = int(config.get('Experiment', 'MaxErrors', fallback='3'))
+
+    def handle_dockerfile_action(response):
+        nonlocal current_dockerfile
+        current_dockerfile = response[12:].strip()
+        dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
+        os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
+        with open(dockerfile_path, 'w') as f:
+            f.write(current_dockerfile)
+        action_history.append({"action": "DOCKERFILE", "content": current_dockerfile})
+        if os.path.exists(dockerfile_path):
+            commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
+            logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
+        else:
+            logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
+
+    def handle_run_action(response):
+        nonlocal results
+        code = response[5:].strip()
+        code_path = os.path.join(exp_dir, 'experiment.py')
+        os.makedirs(os.path.dirname(code_path), exist_ok=True)
+        with open(code_path, 'w') as f:
+            f.write(code)
+        results = run_in_docker(docker_client, current_dockerfile, code, exp_dir)
+        results_path = os.path.join(exp_dir, 'results.txt')
+        os.makedirs(os.path.dirname(results_path), exist_ok=True)
+        with open(results_path, 'w') as f:
+            f.write(results)
+        action_history.append({"action": "RUN", "code": code, "results": results})
+        commit_to_git(repo, f"Experiment {experiment_id}: Run code", [code_path, results_path])
+        logger.info(f"Code executed for experiment {experiment_id}")
+
+    def handle_search_action(response):
+        nonlocal results
+        query = response[8:].strip()
+        search_results = search_previous_experiments(query)
+        results = json.dumps(search_results, indent=2)
+        action_history.append({"action": "SEARCH", "query": query, "results": results})
+        logger.info(f"Search performed for query: {query}")
+
+    def handle_google_action(response):
+        nonlocal results
+        query = response[8:].strip()
+        search_results = google_search(query)
+        results = json.dumps(search_results, indent=2)
+        action_history.append({"action": "GOOGLE", "query": query, "results": results})
+        logger.info(f"Google search performed for query: {query}")
+
+    def handle_loadurl_action(response):
+        url = response[9:].strip()
+        webpage_content = load_webpage(url)
+        action_history.append({"action": "LOADURL", "url": url, "content": webpage_content})
+        logger.info(f"Webpage loaded: {url}")
+
+    def handle_finalize_action(response):
+        nonlocal ai_notes
+        ai_notes = response[10:].strip()
+        logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
+        return True  # Signal to break the loop
+
+    action_handlers = {
+        '[DOCKERFILE]': handle_dockerfile_action,
+        '[RUN]': handle_run_action,
+        '[SEARCH]': handle_search_action,
+        '[GOOGLE]': handle_google_action,
+        '[LOADURL]': handle_loadurl_action,
+        '[FINALIZE]': handle_finalize_action
+    }
+
+    for action_count in range(1, max_actions + 1):
+        time_elapsed = time.time() - start_time
+        time_remaining = max(0, time_limit - time_elapsed)
+        time.sleep(1)  # Added delay between actions
+
+        print_status_update(experiment_id, action_count, max_actions, time_remaining)
+
+        if time_remaining <= 0:
+            logger.warning(f"Experiment {experiment_id} reached time limit.")
+            break
+
+        ai_response = get_ai_response(get_ai_prompt(
+            experiment_id, prev_data, action_history, current_dockerfile, 
+            action_count, max_actions, time_remaining, access
+        ), access['ANTHROPIC_API_KEY'])
+        
+        logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
+        
+        if ai_response.startswith("Error:"):
+            logger.error(f"AI response error: {ai_response}")
+            print(f"Error in AI response: {ai_response}")
+            error_count += 1
+            if error_count >= max_errors:
+                logger.error(f"Stopping experiment after {max_errors} consecutive errors")
+                break
+            continue
+        else:
+            error_count = 0
+
+        logger.info(f"AI response received: {ai_response[:50]}...")  # Log first 50 chars of response
+        
+        try:
+            action_type = ai_response.split()[0]
+            if action_type in action_handlers:
+                if action_handlers[action_type](ai_response):
+                    break  # Break the loop if finalize action is handled
+            else:
+                results = f"Unknown action in AI response: {ai_response[:100]}..."
+                logger.warning(results)
+                action_history.append({"action": "UNKNOWN", "response": ai_response, "results": results})
+        except Exception as action_error:
+            logger.error(f"Error processing action {action_count}: {str(action_error)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            action_history.append({"action": "ERROR", "error": str(action_error)})
+
+    # If we've reached this point, we've hit the max actions limit or time limit
+    if not ai_notes:
+        logger.warning(f"Experiment {experiment_id} ended without explicit finalization.")
+        final_prompt = f"""
+        Experiment #{experiment_id} has ended without explicit finalization.
+        
+        Final Status:
+        - Actions taken: {len(action_history)} of {max_actions}
+        - Time remaining: {max(0, time_limit - (time.time() - start_time)):.2f} seconds
+
+        Here's a summary of your actions and their results:
+        {json.dumps(action_history, indent=2)}
+
+        Current Dockerfile:
+        {current_dockerfile}
+        
+        Based on these actions, results, and the current Dockerfile, please provide final notes for the next AI to continue from this point.
+        Your response MUST start with [FINALIZE] followed by your notes.
+        """
+        final_response = get_ai_response(final_prompt, access['ANTHROPIC_API_KEY'])
+        logger.info(f"Final AI response:\n{final_response}")  # Log the full final response
+        if final_response.startswith('[FINALIZE]'):
+            ai_notes = final_response[10:].strip()
+        else:
+            ai_notes = "AI failed to provide final notes after experiment ended."
+
+    return action_history, results, ai_notes, current_dockerfile
+
 def run_experiment_cycle(docker_client):
     free_space = check_disk_space()
-    if free_space < 5:  # 5GB as an example threshold
-        logger.error("Not enough disk space to run experiment. Aborting.")
+    min_space_gb = config.getint('Docker', 'MinimumDiskSpaceGB', fallback=10)
+    if free_space < min_space_gb:
+        logger.error(f"Not enough disk space to run experiment. Available: {free_space}GB, Required: {min_space_gb}GB. Aborting.")
         return
+
+    log_docker_resource_usage()
+    cleanup_docker_resources()
+    log_docker_resource_usage()
+
     logger.info("Starting new experiment cycle")
     access = read_access()
     experiment_id = get_last_experiment_id() + 1
@@ -424,181 +675,21 @@ def run_experiment_cycle(docker_client):
         logger.error("Failed to initialize Git repository. Exiting experiment cycle.")
         return
 
-    exp_dir = os.path.abspath(os.path.join(repo_dir, f'experiment_{experiment_id}'))
-    os.makedirs(exp_dir, exist_ok=True)
-    logger.info(f"Created experiment directory: {exp_dir}")
-
-    # Check if the experiment directory is within the Git repository
-    if not exp_dir.startswith(repo_dir):
-        logger.error(f"Experiment directory {exp_dir} is not within the Git repository {repo_dir}")
-        return
-
-    conn = None
     try:
-        conn = sqlite3.connect('ouroboros.db')
-        c = conn.cursor()
+        exp_dir = setup_experiment(experiment_id, repo_dir)
+        prev_data = get_previous_experiment_data(experiment_id)
         
-        # Fetch previous experiment data
-        c.execute("SELECT code, results, ai_notes, dockerfile FROM experiments WHERE id = ?", (experiment_id - 1,))
-        prev_data = c.fetchone()
-        
-        action_history = []
-        current_dockerfile = "FROM python:3.9-slim\nWORKDIR /app\n"
-        results = ""
-        
-        max_actions = int(config.get('Experiment', 'MaxActions', fallback='10'))
-        time_limit = float(config.get('Experiment', 'TimeLimit', fallback='3600'))
-        start_time = time.time()
-        error_count = 0
-        max_errors = 3
-        logger.info(f"Starting experiment cycle {experiment_id}")
-        
-        for action_count in range(1, max_actions + 1):
-            time_elapsed = time.time() - start_time
-            time_remaining = max(0, time_limit - time_elapsed)
-            time.sleep(1)  # Added delay between actions
+        action_history, results, ai_notes, dockerfile = run_ai_interaction_loop(
+            experiment_id, prev_data, exp_dir, repo, access, docker_client)
 
-            print_status_update(experiment_id, action_count, max_actions, time_remaining)
-
-            if time_remaining <= 0:
-                logger.warning(f"Experiment {experiment_id} reached time limit.")
-                break
-
-            ai_response = get_ai_response(get_ai_prompt(
-                experiment_id, prev_data, action_history, current_dockerfile, 
-                action_count, max_actions, time_remaining, access
-            ), access['ANTHROPIC_API_KEY'])
-            
-            logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
-            
-            if ai_response.startswith("Error:"):
-                logger.error(f"AI response error: {ai_response}")
-                print(f"Error in AI response: {ai_response}")
-                error_count += 1
-                if error_count >= max_errors:
-                    logger.error(f"Stopping experiment after {max_errors} consecutive errors")
-                    break
-                continue
-            else:
-                error_count = 0
-
-            logger.info(f"AI response received: {ai_response[:50]}...")  # Log first 50 chars of response
-            
-            try:
-                if ai_response.startswith('[DOCKERFILE]'):
-                    current_dockerfile = ai_response[12:].strip()
-                    dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
-                    os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
-                    with open(dockerfile_path, 'w') as f:
-                        f.write(current_dockerfile)
-                    action_history.append({"action": "DOCKERFILE", "content": current_dockerfile})
-                    
-                    # Check if the file was actually created before trying to commit
-                    if os.path.exists(dockerfile_path):
-                        commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
-                        logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
-                    else:
-                        logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
-                elif ai_response.startswith('[RUN]'):
-                    code = ai_response[5:].strip()
-                    code_path = os.path.join(exp_dir, 'experiment.py')
-                    os.makedirs(os.path.dirname(code_path), exist_ok=True)
-                    with open(code_path, 'w') as f:
-                        f.write(code)
-                    results = run_in_docker(docker_client, current_dockerfile, code, exp_dir)
-                    results_path = os.path.join(exp_dir, 'results.txt')
-                    os.makedirs(os.path.dirname(results_path), exist_ok=True)
-                    with open(results_path, 'w') as f:
-                        f.write(results)
-                    action_history.append({"action": "RUN", "code": code, "results": results})
-                    commit_to_git(repo, f"Experiment {experiment_id}: Run code", [code_path, results_path])
-                    logger.info(f"Code executed for experiment {experiment_id}")
-                elif ai_response.startswith('[SEARCH]'):
-                    query = ai_response[8:].strip()
-                    search_results = search_previous_experiments(query)
-                    results = json.dumps(search_results, indent=2)
-                    action_history.append({"action": "SEARCH", "query": query, "results": results})
-                    logger.info(f"Search performed for query: {query}")
-                elif ai_response.startswith('[GOOGLE]'):
-                    query = ai_response[8:].strip()
-                    search_results = google_search(query)
-                    results = json.dumps(search_results, indent=2)
-                    action_history.append({"action": "GOOGLE", "query": query, "results": results})
-                    logger.info(f"Google search performed for query: {query}")
-                elif ai_response.startswith('[LOADURL]'):
-                    url = ai_response[9:].strip()
-                    webpage_content = load_webpage(url)
-                    action_history.append({"action": "LOADURL", "url": url, "content": webpage_content})
-                    logger.info(f"Webpage loaded: {url}")
-                elif ai_response.startswith('[FINALIZE]'):
-                    ai_notes = ai_response[10:].strip()
-                    c.execute("INSERT INTO experiments (id, code, results, ai_notes, dockerfile, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                              (experiment_id, json.dumps(action_history), results, ai_notes, current_dockerfile, datetime.now().isoformat()))
-                    conn.commit()
-                    commit_to_git(repo, f"Experiment {experiment_id}: Finalize")
-                    logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
-                    break  # Exit the loop if finalized
-                else:
-                    results = f"Unknown action in AI response: {ai_response[:100]}..."
-                    logger.warning(results)
-                    action_history.append({"action": "UNKNOWN", "response": ai_response, "results": results})
-            except Exception as action_error:
-                logger.error(f"Error processing action {action_count}: {str(action_error)}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                action_history.append({"action": "ERROR", "error": str(action_error)})
-
-        # If we've reached this point, we've hit the max actions limit or time limit
-        if not ai_response.startswith('[FINALIZE]'):
-            logger.warning(f"Experiment {experiment_id} ended without explicit finalization.")
-            final_prompt = f"""
-            Experiment #{experiment_id} has ended without explicit finalization.
-            
-            Final Status:
-            - Actions taken: {len(action_history)} of {max_actions}
-            - Time remaining: {max(0, time_limit - (time.time() - start_time)):.2f} seconds
-
-            Here's a summary of your actions and their results:
-            {json.dumps(action_history, indent=2)}
-
-            Current Dockerfile:
-            {current_dockerfile}
-            
-            Based on these actions, results, and the current Dockerfile, please provide final notes for the next AI to continue from this point.
-            Your response MUST start with [FINALIZE] followed by your notes.
-            """
-            final_response = get_ai_response(final_prompt, access['ANTHROPIC_API_KEY'])
-            logger.info(f"Final AI response:\n{final_response}")  # Log the full final response
-            if final_response.startswith('[FINALIZE]'):
-                ai_notes = final_response[10:].strip()
-            else:
-                ai_notes = "AI failed to provide final notes after experiment ended."
-            
-            c.execute("INSERT INTO experiments (id, code, results, ai_notes, dockerfile, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                      (experiment_id, json.dumps(action_history), results, ai_notes, current_dockerfile, datetime.now().isoformat()))
-            conn.commit()
-            commit_to_git(repo, f"Experiment {experiment_id}: Forced finalization")
-            logger.info(f"Experiment {experiment_id} forcefully finalized. Waiting for next cycle...")
-        
-        # Save full experiment log
-        log_path = os.path.join(exp_dir, 'experiment_log.txt')
-        os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        with open(log_path, 'w') as f:
-            json.dump({
-                "experiment_id": experiment_id,
-                "action_history": action_history,
-                "results": results,
-                "ai_notes": ai_notes,
-                "dockerfile": current_dockerfile
-            }, f, indent=2)
-        logger.info(f"Experiment log saved to {log_path}")
+        save_experiment_results(experiment_id, action_history, results, ai_notes, dockerfile)
+        log_path = save_experiment_log(exp_dir, experiment_id, action_history, results, ai_notes, dockerfile)
         commit_to_git(repo, f"Experiment {experiment_id}: Save experiment log", [log_path])
-    
+        
     except Exception as e:
         logger.error(f"Error in experiment cycle: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-    finally:
-        if conn:
-            conn.close()
+
 
 # Main function
 def main():

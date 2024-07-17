@@ -14,6 +14,8 @@ MemoryLimit = 512m
 CPUQuota = 50000
 Timeout = 300
 NetworkAccess = false
+EnableCleanup = true
+KeepLastNImages = 5
 
 [Search]
 MaxResults = 5
@@ -24,4 +26,5 @@ RunFirstImmediately = true
 
 [Experiment]
 MaxActions = 10
+MaxErrors = 3
 TimeLimit = 3600

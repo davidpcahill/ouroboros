@@ -4,17 +4,50 @@
 
 Ouroboros is an advanced AI system designed to conduct experiments, improve itself, and push the boundaries of AI research. It operates in cycles, running experiments, analyzing results, and building upon its own knowledge.
 
+## Summary
+
+**Ouroboros** is an autonomous AI system designed to help automate AI research and development. Leveraging the advanced capabilities of the Claude 3.5 model, Ouroboros conducts experiments, analyzes results, and iteratively improves upon its own knowledge and capabilities. This self-improving cycle mimics the ouroboros symbol, representing eternal growth and evolution in AI.
+
 ## Features
 
-- Self-improving AI system using the Claude 3.5 model
-- Docker-based sandboxed environment for safe code execution
-- Git integration for version control of experiments
-- SQLite database for storing experiment results and metadata
-- Configurable experiment parameters (max actions, time limits, etc.)
-- Search functionality to reference previous experiments
-- Google search capability for internet research
-- Webpage content loading for information gathering
-- Automated experiment cycle management
+- **Advanced AI Model**: Utilizes the Claude 3.5 model for sophisticated reasoning and decision-making.
+- **Sandboxed Environment**: Executes code safely within Docker containers, ensuring system integrity.
+- **Version Control**: Integrates with Git to maintain a comprehensive history of all experiments.
+- **Persistent Storage**: Uses SQLite to store experiment results, metadata, and AI insights.
+- **Configurable Parameters**: Allows fine-tuning of experiment duration, action limits, and resource allocation.
+- **Knowledge Retention**: Can search and reference previous experiments for continuous learning.
+- **Internet Research**: Capable of performing Google searches and loading webpage content for information gathering.
+- **Automated Cycle Management**: Schedules and executes experiment cycles with minimal human intervention.
+- **Extensive Logging**: Maintains detailed logs for monitoring, debugging, and auditing purposes.
+
+## How It Works
+
+1. **Initialization**: The system sets up the database, Git repository, and Docker environment.
+2. **Experiment Cycle**:
+   - Retrieves context from previous experiments
+   - Generates AI prompt with current state and experiment history
+   - AI decides on the next action (run code, modify environment, research, etc.)
+   - Executes the chosen action securely
+   - Records results and updates experiment history
+   - Repeats until experiment completion or reaching predefined limits
+3. **Data Persistence**: Stores results in the database and commits to Git
+4. **Scheduling**: Waits for the configured interval before initiating the next cycle
+
+## Ethical Considerations and Safety Measures
+
+- **Isolated Execution**: All code runs within restricted Docker containers
+- **Resource Limitations**: Strict controls on computational resources and execution time
+- **Audit Trail**: Comprehensive logging of AI decisions and actions
+- **Configurable Internet Access**: Research capabilities can be restricted if needed
+- **Regular Review**: Encourages human oversight and intervention when necessary
+
+## Potential Applications
+
+- Advancing AI research methodologies
+- Automated software testing and optimization
+- Exploring novel algorithms and data structures
+- Investigating AI safety and alignment strategies
+- Accelerating scientific discovery in various domains
 
 ## Prerequisites
 
@@ -71,14 +104,6 @@ TimeLimit = 3600
 5. (Optional) Create an `access.txt` file in the project root with any additional API keys or credentials you want to make available to the AI:
    SOME_API_KEY=your_api_key_here
 
-## Usage
-
-Run the Ouroboros system:
-
-`python ouroboros.py`
-
-The system will start running experiments in cycles, with each cycle lasting up to the specified time limit or until the maximum number of actions is reached.
-
 ## Configuration
 
 You can adjust the following parameters in the `config.ini` file:
@@ -90,13 +115,6 @@ You can adjust the following parameters in the `config.ini` file:
 - `Scheduling`: Set the interval between experiment cycles
 - `Experiment`: Configure the maximum number of actions and time limit for each experiment
 
-## New Features
-
-- Google Search: The AI can now perform Google searches using the `[GOOGLE]` action if the Google API key and CSE ID are configured.
-- Webpage Loading: The AI can load and summarize webpage content using the `[LOADURL]` action.
-
-These features allow the AI to conduct internet research and gather information to enhance its experiments and decision-making process.
-
 ## Project Structure
 
 - `ouroboros.py`: Main script containing the Ouroboros system
@@ -106,28 +124,17 @@ These features allow the AI to conduct internet research and gather information 
 - `experiments/`: Directory containing individual experiment files and Git repository
 - `ouroboros.log`: Log file for system events and errors
 
-## How It Works
+## Usage
 
-1. The system initializes the database and Git repository.
-2. In each cycle, Ouroboros:
-   - Retrieves the previous experiment's data
-   - Prompts the AI with the current state and experiment history
-   - Executes the AI's chosen action (run code, modify Dockerfile, search, Google search, load URL, etc.)
-   - Records the results and updates the experiment history
-   - Continues until finalization or reaching the action/time limit
-3. The experiment results are stored in the database and committed to Git.
-4. The system waits for the configured interval before starting the next cycle.
+Run the Ouroboros system:
 
-## Safety and Ethical Considerations
+`python ouroboros.py`
 
-- All code execution happens within isolated Docker containers.
-- The system has built-in limits on resources, actions, and execution time.
-- Experiment results and AI decisions are logged for review and auditing.
-- Internet access for research is controlled and can be disabled if needed.
+The system will start running experiments in cycles, with each cycle lasting up to the specified time limit or until the maximum number of actions is reached.
 
-## Contributing
+## Contribute to the Future of AI
 
-Contributions to Ouroboros are welcome! Please submit pull requests with any improvements or bug fixes.
+Ouroboros has a goal of helping make significant steps towards autonomous AI research and development. We welcome contributions, suggestions, and discussions on improving and expanding Ouroboros' capabilities.
 
 ## License
 

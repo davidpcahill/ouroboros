@@ -63,8 +63,8 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 ## Installation
 
 1. Clone the repository:
-   git clone https://github.com/yourusername/ouroboros.git
-   cd ouroboros
+   `git clone https://github.com/yourusername/ouroboros.git`
+   `cd ouroboros`
 
 2. Create a virtual environment and activate it:
    - `python -m venv venv`

@@ -21,6 +21,7 @@ MaxResults = 5
 [Docker]
 MemoryLimit = 512m
 CPUQuota = 50000
+MinimumDiskSpaceGB = 50
 Timeout = 300
 NetworkAccess = false
 EnableCleanup = true

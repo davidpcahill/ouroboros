@@ -161,7 +161,7 @@ def read_access():
         logger.error("access.txt file not found")
         return {}
 
-def check_disk_space(min_space_gb=10):
+def check_disk_space(min_space_gb=100):
     total, used, free = shutil.disk_usage("/")
     free_gb = free // (2**30)
     if free_gb < min_space_gb:

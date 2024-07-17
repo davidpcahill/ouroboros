@@ -1,6 +1,6 @@
 [Anthropic]
 API_KEY = your_anthropic_api_key_here
-MODEL = claude-2.1
+MODEL = claude-3-5-sonnet-20240620
 MAX_TOKENS = 100000
 TEMPERATURE = 0.7
 

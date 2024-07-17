@@ -237,16 +237,36 @@ def run_in_docker(client, dockerfile, code, exp_dir):
 def get_ai_response(prompt, api_key):
     try:
         client = anthropic.Anthropic(api_key=api_key)
-        logger.info("Sending request to AI...")
-        response = client.completions.create(
-            model=config.get('Anthropic', 'MODEL', fallback='claude-2.1'),
-            max_tokens_to_sample=int(config.get('Anthropic', 'MAX_TOKENS', fallback='100000')),
-            temperature=float(config.get('Anthropic', 'TEMPERATURE', fallback='0.7')),
-            prompt=f"Human: {prompt}\n\nAssistant:",
-            stop_sequences=["Human:"]
-        )
+        model = config.get('Anthropic', 'MODEL', fallback='claude-2.1')
+        max_tokens = int(config.get('Anthropic', 'MAX_TOKENS', fallback='100000'))
+        temperature = float(config.get('Anthropic', 'TEMPERATURE', fallback='0.7'))
+        
+        logger.info(f"Sending request to AI using model: {model}")
+        
+        if model.startswith("claude-3"):
+            # Use Messages API for Claude 3.x models
+            message = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            response_content = message.content[0].text
+        else:
+            # Use Completions API for Claude 2.x models
+            response = client.completions.create(
+                model=model,
+                max_tokens_to_sample=max_tokens,
+                temperature=temperature,
+                prompt=f"Human: {prompt}\n\nAssistant:",
+                stop_sequences=["Human:"]
+            )
+            response_content = response.completion
+        
         logger.info("AI response received")
-        return response.completion
+        return response_content
     except anthropic.APIError as e:
         logger.error(f"Anthropic API error: {str(e)}")
         return f"Error: Anthropic API error - {str(e)}"

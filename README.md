@@ -111,7 +111,7 @@ You can adjust the following parameters in the `config.ini` file:
 - `Anthropic`: Set your Claude API key
 - `Google`: Set your Google API key and Custom Search Engine ID for the Google search feature
 - `Docker`: Configure resource limits for Docker containers
-- `Search`: Set the maximum number of results returned by the search function
+- `Search`: Set the maximum number of results returned by the experiment knowledge search function
 - `Scheduling`: Set the interval between experiment cycles
 - `Experiment`: Configure the maximum number of actions and time limit for each experiment
 
@@ -132,7 +132,7 @@ Run the Ouroboros system:
 
 The system will start running experiments in cycles, with each cycle lasting up to the specified time limit or until the maximum number of actions is reached.
 
-## Contribute to the Future of AI
+## Contribute
 
 Ouroboros has a goal of helping make significant steps towards autonomous AI research and development. We welcome contributions, suggestions, and discussions on improving and expanding Ouroboros' capabilities.
 

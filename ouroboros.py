@@ -468,18 +468,32 @@ def main():
     print("Ouroboros system started. Press Ctrl+C to exit.")
 
     interval_minutes = int(config.get('Scheduling', 'IntervalMinutes', fallback='60'))
-    schedule.every(interval_minutes).minutes.do(run_experiment_cycle, docker_client)
+    run_first_immediately = config.getboolean('Scheduling', 'RunFirstImmediately', fallback=False)
+
+    logger.info(f"Experiment interval set to {interval_minutes} minutes")
+    print(f"Experiments will run every {interval_minutes} minutes")
+
+    if run_first_immediately:
+        logger.info("First experiment will run immediately")
+        print("First experiment will run immediately")
+    else:
+        logger.info("First experiment will run after the initial interval")
+        print("First experiment will run after the initial interval")
 
     try:
         with tqdm(total=0, unit="cycles", desc="Running experiments") as pbar:
-            last_run = time.time()
+            last_run = time.time() - interval_minutes * 60 if run_first_immediately else time.time()
             while True:
                 now = time.time()
                 if now - last_run >= interval_minutes * 60:
                     logger.info("Starting new experiment cycle")
+                    print("\nStarting new experiment cycle...")
                     run_experiment_cycle(docker_client)
                     last_run = now
                     pbar.update(1)
+                else:
+                    remaining = int(interval_minutes * 60 - (now - last_run))
+                    print(f"\rTime until next experiment: {remaining // 60:02d}:{remaining % 60:02d}", end="", flush=True)
                 schedule.run_pending()
                 time.sleep(1)
     except KeyboardInterrupt:

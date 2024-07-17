@@ -17,6 +17,7 @@ MaxResults = 5
 
 [Scheduling]
 IntervalMinutes = 60
+RunFirstImmediately = true
 
 [Experiment]
 MaxActions = 10

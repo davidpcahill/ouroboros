@@ -307,8 +307,6 @@ def run_in_docker(client, dockerfile, code, exp_dir):
             logger.info("Removing Docker container and image...")
             container.remove()
             image.remove()
-            # Clean up the temporary Dockerfile
-            os.remove(dockerfile_path)
         
         return output
     except docker.errors.APIError as e:
@@ -484,11 +482,15 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     Available API Keys and Credentials:
     {json.dumps(access_info, indent=2)}
 
-    You can use these API keys and credentials in your code if needed. Be cautious and ethical when using external services.
+    You can use these API keys and credentials in your Dockerfile as environment variables if needed. Be cautious and ethical when using external services.
 
-    You have access to a sandbox environment where you can run any Python code. You can use external libraries and APIs as needed. Be creative and ambitious in your experiments, but also considerate of potential risks and ethical implications.
+    IMPORTANT DOCKER INSTRUCTIONS:
+    - Your main experiment code will be automatically copied into the Docker image as 'experiment.py'.
+    - You don't need to use COPY commands for your main experiment code.
+    - If you need additional files or dependencies, specify them in the Dockerfile.
+    - Use ENV in the Dockerfile to set environment variables if needed for your code, for example, the API keys from the access_info provided above.
 
-    IMPORTANT: You MUST respond with one of the following action tags:
+    You can perform the following actions:
     1. [DOCKERFILE] <dockerfile content>
     2. [RUN] <code>
     3. [SEARCH] <query>
@@ -497,21 +499,12 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     6. [FINALIZE] <notes>
 
     Your response MUST start with one of these tags. Do not include any other text before the tag.
-    When providing code for the [RUN] action, DO NOT include markdown code block delimiters (```). Provide only the raw Python code.
-
-    Additional Information:
-    - Your code runs in an isolated Docker container. Specify your desired environment in the Dockerfile.
-    - Network access is currently {"enabled" if network_access else "disabled"} for your experiments.
-    - When finalizing an experiment, include notes that will help instruct and guide the next iteration of yourself.
-    - You have a high token limit, so feel free to be thorough in your responses and explanations.
-    - You can use the [SEARCH] action to find and reference your previous experiments, solutions, or any relevant information from past runs.
-    - The current Dockerfile is shown above. You can modify it using the [DOCKERFILE] action if needed.
+    When providing code for the [RUN] action, provide only the raw Python code that will be saved as 'experiment.py' and run in the Docker container.
 
     Remember:
     - Each experiment runs in isolation. Variables and state are not preserved between runs.
     - You have a maximum of {max_actions} actions per experiment cycle.
     - The experiment will automatically end when you reach the maximum actions or when the time limit is reached.
-    - Humans may review your notes periodically. Feel free to communicate your thoughts and requests.
     - Your goal is continuous self-improvement. Always strive to build upon your past experiments and knowledge.
 
     What would you like to do next in this experiment? Remember to start your response with one of the action tags listed above.

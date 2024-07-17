@@ -6,6 +6,7 @@ import time
 import os
 import sys
 import logging
+import traceback
 from logging.handlers import RotatingFileHandler
 import schedule
 import json
@@ -449,55 +450,63 @@ def run_experiment_cycle(docker_client):
 
             logger.info(f"AI response received: {ai_response[:50]}...")  # Log first 50 chars of response
             
-            if ai_response.startswith('[DOCKERFILE]'):
-                current_dockerfile = ai_response[12:].strip()
-                dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
-                with open(dockerfile_path, 'w') as f:
-                    f.write(current_dockerfile)
-                action_history.append({"action": "DOCKERFILE", "content": current_dockerfile})
-                commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
-                logger.info(f"Dockerfile updated for experiment {experiment_id}")
-            elif ai_response.startswith('[RUN]'):
-                code = ai_response[5:].strip()
-                code_path = os.path.join(exp_dir, 'experiment.py')
-                with open(code_path, 'w') as f:
-                    f.write(code)
-                results = run_in_docker(docker_client, current_dockerfile, code, exp_dir)
-                results_path = os.path.join(exp_dir, 'results.txt')
-                with open(results_path, 'w') as f:
-                    f.write(results)
-                action_history.append({"action": "RUN", "code": code, "results": results})
-                commit_to_git(repo, f"Experiment {experiment_id}: Run code", [code_path, results_path])
-                logger.info(f"Code executed for experiment {experiment_id}")
-            elif ai_response.startswith('[SEARCH]'):
-                query = ai_response[8:].strip()
-                search_results = search_previous_experiments(query)
-                results = json.dumps(search_results, indent=2)
-                action_history.append({"action": "SEARCH", "query": query, "results": results})
-                logger.info(f"Search performed for query: {query}")
-            elif ai_response.startswith('[GOOGLE]'):
-                query = ai_response[8:].strip()
-                search_results = google_search(query)
-                results = json.dumps(search_results, indent=2)
-                action_history.append({"action": "GOOGLE", "query": query, "results": results})
-                logger.info(f"Google search performed for query: {query}")
-            elif ai_response.startswith('[LOADURL]'):
-                url = ai_response[9:].strip()
-                webpage_content = load_webpage(url)
-                action_history.append({"action": "LOADURL", "url": url, "content": webpage_content})
-                logger.info(f"Webpage loaded: {url}")
-            elif ai_response.startswith('[FINALIZE]'):
-                ai_notes = ai_response[10:].strip()
-                c.execute("INSERT INTO experiments (id, code, results, ai_notes, dockerfile, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                          (experiment_id, json.dumps(action_history), results, ai_notes, current_dockerfile, datetime.now().isoformat()))
-                conn.commit()
-                commit_to_git(repo, f"Experiment {experiment_id}: Finalize")
-                logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
-                break  # Exit the loop if finalized
-            else:
-                results = f"Unknown action in AI response: {ai_response[:100]}..."
-                logger.warning(results)
-                action_history.append({"action": "UNKNOWN", "response": ai_response, "results": results})
+            try:
+                if ai_response.startswith('[DOCKERFILE]'):
+                    current_dockerfile = ai_response[12:].strip()
+                    dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
+                    os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
+                    with open(dockerfile_path, 'w') as f:
+                        f.write(current_dockerfile)
+                    action_history.append({"action": "DOCKERFILE", "content": current_dockerfile})
+                    commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
+                    logger.info(f"Dockerfile updated for experiment {experiment_id}")
+                elif ai_response.startswith('[RUN]'):
+                    code = ai_response[5:].strip()
+                    code_path = os.path.join(exp_dir, 'experiment.py')
+                    os.makedirs(os.path.dirname(code_path), exist_ok=True)
+                    with open(code_path, 'w') as f:
+                        f.write(code)
+                    results = run_in_docker(docker_client, current_dockerfile, code, exp_dir)
+                    results_path = os.path.join(exp_dir, 'results.txt')
+                    os.makedirs(os.path.dirname(results_path), exist_ok=True)
+                    with open(results_path, 'w') as f:
+                        f.write(results)
+                    action_history.append({"action": "RUN", "code": code, "results": results})
+                    commit_to_git(repo, f"Experiment {experiment_id}: Run code", [code_path, results_path])
+                    logger.info(f"Code executed for experiment {experiment_id}")
+                elif ai_response.startswith('[SEARCH]'):
+                    query = ai_response[8:].strip()
+                    search_results = search_previous_experiments(query)
+                    results = json.dumps(search_results, indent=2)
+                    action_history.append({"action": "SEARCH", "query": query, "results": results})
+                    logger.info(f"Search performed for query: {query}")
+                elif ai_response.startswith('[GOOGLE]'):
+                    query = ai_response[8:].strip()
+                    search_results = google_search(query)
+                    results = json.dumps(search_results, indent=2)
+                    action_history.append({"action": "GOOGLE", "query": query, "results": results})
+                    logger.info(f"Google search performed for query: {query}")
+                elif ai_response.startswith('[LOADURL]'):
+                    url = ai_response[9:].strip()
+                    webpage_content = load_webpage(url)
+                    action_history.append({"action": "LOADURL", "url": url, "content": webpage_content})
+                    logger.info(f"Webpage loaded: {url}")
+                elif ai_response.startswith('[FINALIZE]'):
+                    ai_notes = ai_response[10:].strip()
+                    c.execute("INSERT INTO experiments (id, code, results, ai_notes, dockerfile, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                              (experiment_id, json.dumps(action_history), results, ai_notes, current_dockerfile, datetime.now().isoformat()))
+                    conn.commit()
+                    commit_to_git(repo, f"Experiment {experiment_id}: Finalize")
+                    logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
+                    break  # Exit the loop if finalized
+                else:
+                    results = f"Unknown action in AI response: {ai_response[:100]}..."
+                    logger.warning(results)
+                    action_history.append({"action": "UNKNOWN", "response": ai_response, "results": results})
+            except Exception as action_error:
+                logger.error(f"Error processing action {action_count}: {str(action_error)}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                action_history.append({"action": "ERROR", "error": str(action_error)})
 
         # If we've reached this point, we've hit the max actions limit or time limit
         if not ai_response.startswith('[FINALIZE]'):
@@ -533,6 +542,7 @@ def run_experiment_cycle(docker_client):
         
         # Save full experiment log
         log_path = os.path.join(exp_dir, 'experiment_log.txt')
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
         with open(log_path, 'w') as f:
             json.dump({
                 "experiment_id": experiment_id,
@@ -546,6 +556,7 @@ def run_experiment_cycle(docker_client):
     
     except Exception as e:
         logger.error(f"Error in experiment cycle: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
     finally:
         if conn:
             conn.close()

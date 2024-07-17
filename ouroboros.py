@@ -266,10 +266,19 @@ def create_docker_client():
 
 def run_in_docker(client, dockerfile, code, exp_dir):
     try:
+        # Create experiment.py file
+        code_path = os.path.join(exp_dir, 'experiment.py')
+        with open(code_path, 'w') as f:
+            f.write(code)
+        
         dockerfile_content = f"{dockerfile}\nCOPY experiment.py /app/experiment.py\nCMD [\"python\", \"/app/experiment.py\"]"
         
         logger.info("Building Docker image...")
-        image, _ = client.images.build(fileobj=io.BytesIO(dockerfile_content.encode()), rm=True)
+        image, _ = client.images.build(
+            path=exp_dir,  # Use the experiment directory as build context
+            dockerfile=io.BytesIO(dockerfile_content.encode()),
+            rm=True
+        )
         
         network_mode = 'none' if config.getboolean('Docker', 'NetworkAccess', fallback=False) == False else 'bridge'
         
@@ -284,10 +293,6 @@ def run_in_docker(client, dockerfile, code, exp_dir):
         )
     
         try:
-            code_path = os.path.join(exp_dir, 'experiment.py')
-            with open(code_path, 'w') as f:
-                f.write(code)
-            
             logger.info("Starting Docker container...")
             container.start()
             container.wait(timeout=int(config.get('Docker', 'Timeout', fallback='300')))
@@ -758,6 +763,11 @@ def run_experiment_cycle(docker_client):
 
     try:
         exp_dir = setup_experiment(experiment_id, repo_dir)
+        
+        if not os.path.exists(exp_dir):
+            logger.error(f"Experiment directory does not exist: {exp_dir}")
+            return
+        
         prev_data = get_previous_experiment_data(experiment_id)
         
         action_history, results, ai_notes, dockerfile = run_ai_interaction_loop(

@@ -1,5 +1,7 @@
 [Anthropic]
 API_KEY = your_anthropic_api_key_here
+MODEL = claude-2.1
+MAX_TOKENS = 100000
 
 [Google]
 API_KEY = your_google_api_key_here

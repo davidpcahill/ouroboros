@@ -239,13 +239,16 @@ def get_ai_response(prompt, api_key):
         client = anthropic.Anthropic(api_key=api_key)
         logger.info("Sending request to AI...")
         response = client.completions.create(
-            model="claude-3.5-sonnet-20240229",
-            max_tokens_to_sample=100000,
+            model=config.get('Anthropic', 'MODEL', fallback='claude-2.1'),
+            max_tokens_to_sample=config.get('Anthropic', 'MAX_TOKENS', fallback='100000'),
             prompt=f"Human: {prompt}\n\nAssistant:",
             stop_sequences=["Human:"]
         )
         logger.info("AI response received")
         return response.completion
+    except anthropic.APIError as e:
+        logger.error(f"Anthropic API error: {str(e)}")
+        return f"Error: Anthropic API error - {str(e)}"
     except Exception as e:
         logger.error(f"Error getting AI response: {str(e)}")
         return f"Error: {str(e)}"
@@ -364,7 +367,8 @@ def run_experiment_cycle(docker_client):
         max_actions = int(config.get('Experiment', 'MaxActions', fallback='10'))
         time_limit = float(config.get('Experiment', 'TimeLimit', fallback='3600'))
         start_time = time.time()
-
+        error_count = 0
+        max_errors = 3
         logger.info(f"Starting experiment cycle {experiment_id}")
         
         for action_count in range(1, max_actions + 1):
@@ -386,7 +390,13 @@ def run_experiment_cycle(docker_client):
             if ai_response.startswith("Error:"):
                 logger.error(f"AI response error: {ai_response}")
                 print(f"Error in AI response: {ai_response}")
+                error_count += 1
+                if error_count >= max_errors:
+                    logger.error(f"Stopping experiment after {max_errors} consecutive errors")
+                    break
                 continue
+            else:
+                error_count = 0
 
             logger.info(f"AI response received: {ai_response[:50]}...")  # Log first 50 chars of response
             
@@ -478,6 +488,9 @@ def run_experiment_cycle(docker_client):
 
 # Main function
 def main():
+    if not check_anthropic_version():
+        return
+    
     init_db()
     docker_client = create_docker_client()
     if not docker_client:

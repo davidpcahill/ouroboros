@@ -41,8 +41,10 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 ```
 [Anthropic]
 API_KEY = your_anthropic_api_key_here
+MODEL = claude-2.1
+MAX_TOKENS = 100000
 
-[Google] # Optional
+[Google]
 API_KEY = your_google_api_key_here
 CSE_ID = your_custom_search_engine_id_here
 MaxResults = 5

@@ -144,7 +144,12 @@ def commit_to_git(repo, message, files_to_add=None):
         return
     try:
         if files_to_add:
-            repo.index.add(files_to_add)
+            existing_files = [f for f in files_to_add if os.path.exists(f)]
+            if existing_files:
+                repo.index.add(existing_files)
+            else:
+                logger.warning(f"No files exist to add for commit: {message}")
+                return
         else:
             repo.git.add(A=True)
         repo.index.commit(message)
@@ -399,6 +404,11 @@ def run_experiment_cycle(docker_client):
     os.makedirs(exp_dir, exist_ok=True)
     logger.info(f"Created experiment directory: {exp_dir}")
 
+    # Check if the experiment directory is within the Git repository
+    if not os.path.commonpath([exp_dir, repo.working_tree_dir]) == repo.working_tree_dir:
+        logger.error(f"Experiment directory {exp_dir} is not within the Git repository")
+        return
+
     conn = None
     try:
         conn = sqlite3.connect('ouroboros.db')
@@ -458,8 +468,13 @@ def run_experiment_cycle(docker_client):
                     with open(dockerfile_path, 'w') as f:
                         f.write(current_dockerfile)
                     action_history.append({"action": "DOCKERFILE", "content": current_dockerfile})
-                    commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
-                    logger.info(f"Dockerfile updated for experiment {experiment_id}")
+                    
+                    # Check if the file was actually created before trying to commit
+                    if os.path.exists(dockerfile_path):
+                        commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
+                        logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
+                    else:
+                        logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
                 elif ai_response.startswith('[RUN]'):
                     code = ai_response[5:].strip()
                     code_path = os.path.join(exp_dir, 'experiment.py')

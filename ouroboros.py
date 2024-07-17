@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
 # Ouroboros.py - An AI-driven self-improving experimentation system
 
-import sqlite3
-import time
 import os
 import sys
+import time
 import shutil
+import json
 import logging
 import traceback
-from logging.handlers import RotatingFileHandler
-import schedule
-import json
+import sqlite3
+import requests
+import configparser
+from io import BytesIO
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
+
 import anthropic
 import openai
 import git
 import docker
-import io
-import configparser
-import requests
+import schedule
+from tqdm import tqdm
 from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
-from tqdm import tqdm
 
 # Load configuration
 config = configparser.ConfigParser()

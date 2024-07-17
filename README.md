@@ -54,7 +54,7 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 - **Python 3.9+**: Ensure you have Python version 3.9 or later installed.
 - **Docker**: Install Docker to run experiments in a secure, sandboxed environment.
 - **Git**: Git is required for version control of experiment history.
-- **Sufficient Disk Space**: Ensure you have enough disk space to store experiment results and logs.
+- **Sufficient Disk Space**: Ensure you have enough disk space to store AI-generated docker images, experiment results, and logs.
 - **Anthropic API Key**: Required **if** leveraging Claude AI models.
 - **OpenAI API Key**: Required **if** leveraging OpenAI AI models.
 - **Google API Key and Custom Search Engine ID** (optional): These are required for enabling the Google search feature.

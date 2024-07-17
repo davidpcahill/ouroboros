@@ -1,6 +1,6 @@
 # Ouroboros: AI-Driven Self-Improving Experimentation System
 
-<img src="ouroboros_logo.png" alt="Ouroboros Logo" width="200"/>
+<img src="logo.png" alt="Ouroboros Logo" width="200"/>
 
 Ouroboros is an advanced AI system designed to conduct experiments, improve itself, and push the boundaries of AI research. It operates in cycles, running experiments, analyzing results, and building upon its own knowledge.
 

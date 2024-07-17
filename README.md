@@ -100,6 +100,7 @@ RunFirstImmediately = true
 MaxActions = 10
 TimeLimit = 3600
 ```
+> **Note:** You can use config.ini.example as a template.
 > **Note:** The Google API section is optional and not required for the base functionality of Ouroboros.
 
 5. (Optional) Create an `access.txt` file in the project root to include any additional API keys or credentials you want to make available to the AI during experiments. Use the following format:
@@ -108,10 +109,11 @@ TimeLimit = 3600
    [key]=[value]
    SOME_API_KEY=your_api_key_here
    ```
+> **Note:** You can use access.txt.example as a template.
 
 ## Configuration
 
-You can adjust the following parameters in the `config.ini` file:
+You can adjust the following parameter sections in the `config.ini` file:
 
 - `Anthropic`: Set your Claude API key
 - `Google`: Set your Google API key and Custom Search Engine ID for the Google search feature

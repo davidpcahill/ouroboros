@@ -12,6 +12,7 @@ Ouroboros is an advanced AI system designed to conduct experiments, improve itse
 
 - **Flexible AI Model Support**: Utilizes either Claude (Anthropic) or GPT (OpenAI) models for sophisticated reasoning and decision-making.
 - **Sandboxed Environment**: Executes code safely within Docker containers, ensuring system integrity.
+- **Host GPU Support**: Supports host GPU docker integration.
 - **Version Control**: Integrates with Git to maintain a comprehensive history of all experiments.
 - **Persistent Storage**: Uses SQLite to store experiment results, metadata, and AI insights.
 - **Configurable Parameters**: Allows fine-tuning of experiment duration, action limits, resource allocation, and AI model selection.

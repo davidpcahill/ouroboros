@@ -523,7 +523,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
 
     Remember:
     - Each experiment runs in isolation. Variables and state are not preserved between runs.
-    - You have a maximum of {max_actions} actions per experiment cycle.
+    - You have a maximum of {max_actions} actions per experiment cycle. On run {max_actions} you should finalize the experiment.
     - The experiment will automatically end when you reach the maximum actions or when the time limit is reached.
     - Your goal is continuous self-improvement. Always strive to build upon your past experiments and knowledge.
 

@@ -389,6 +389,16 @@ def log_docker_resource_usage():
         logger.error(f"Error logging Docker resource usage: {e}")
 
 # AI interaction functions
+def extract_json(text):
+    """Extract JSON object from text."""
+    try:
+        start = text.index('{')
+        end = text.rindex('}') + 1
+        json_str = text[start:end]
+        return json.loads(json_str)
+    except ValueError:
+        return None
+
 def get_ai_response(prompt, api_key):
     ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
     
@@ -475,7 +485,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     prompt = f"""
     Experiment #{experiment_id}
 
-    You are Ouroboros, an advanced AI system designed to improve itself, further AI research, and experiment freely. Your ultimate goal is to push the boundaries of AI capabilities and knowledge through continuous self-improvement and innovative experimentation.
+    You are Ouroboros, an advanced AI system designed to self-improve and push the boundaries of AI research through innovative experiments.
 
     Current Status:
     - Action: {current_action} of {max_actions}
@@ -492,51 +502,27 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     {current_dockerfile}
 
     IMPORTANT INSTRUCTIONS:
-    1. Docker Environment:
-    - You have full control over the Dockerfile. Modify it using the "dockerfile" action.
-    - Your main experiment code will be automatically copied into the Docker image as 'experiment.py'.
-    - Do NOT use COPY commands for your main experiment code.
-    - Specify additional files or dependencies in the Dockerfile if needed.
-    - Use ENV in the Dockerfile to set environment variables only if your experiment specifically requires them. API keys from the access_info are available but should not influence your experiment design unless absolutely necessary.
-
-    2. Code Execution:
-    - Use the "run" action to execute your Python code in the Docker environment.
-    - The system will automatically wait for the results before prompting you for the next action.
-
-    3. Network Access:
-    - If Network access is disabled, you cannot access external URLs or APIs from your Docker container.
-    - "google" and "loadurl" actions will still work if enabled separately by the human operator.
-
-    4. API Keys and Credentials:
+    1. **JSON Format:** All responses must be in valid JSON format. Do not include anything outside the JSON object.
+    2. **Docker Environment:**
+       - Modify the Dockerfile using the "dockerfile" action.
+       - The main experiment code will be copied as 'experiment.py' automatically.
+       - Use ENV in the Dockerfile for necessary environment variables.
+    3. **Code Execution:** Use the "run" action to execute Python code in the Docker environment.
+    4. **Network Access:** No external URLs or APIs if disabled; "google" and "loadurl" actions depend on operator enablement.
+    5. **API Keys and Credentials:** Use them cautiously and only if required for the experiment.
     {json.dumps(access_info, indent=2)}
-    Use these cautiously and ethically when interacting with external services, and only if your experiment specifically requires them.
+    6. **Experiment Lifecycle:**
+       - Each experiment runs in isolation with a maximum of {max_actions} actions.
+       - Use "finalize" on the last action or if you achieve your goals early.
 
-    5. Experiment Lifecycle:
-    - Each experiment runs in isolation. Variables and state are not preserved between runs.
-    - You have a maximum of {max_actions} actions per experiment cycle.
-    - On action {max_actions}, you should use the "finalize" action to conclude the experiment.
-    - The experiment will automatically end when you finalize, reach the maximum actions, or when the time limit is reached.
-    - Feel free to end the experiment early if you have achieved your goals or if you are stuck.
+    **EXPERIMENTATION GUIDELINES:**
+    - Be creative and ambitious. Start simple if it's your first experiment.
+    - Build on previous results, focusing on self-improvement and advancing AI research.
+    - Explore areas such as novel ML algorithms, efficient data processing, NLP, reasoning, meta-learning, or even fun experiments.
+    - Document your process and findings in your code comments and final notes.
 
-    EXPERIMENTATION GUIDELINES:
-    - Be creative and ambitious in your experiments. Don't hesitate to try new approaches or unconventional ideas.
-    - If this is your first experiment or you have no previous data, start with a simple experiment to establish a baseline.
-    - In subsequent experiments, build upon your previous knowledge and results. Aim to improve and expand your capabilities with each cycle.
-    - Focus on self-improvement and advancing AI research. Consider exploring areas such as:
-      * Novel machine learning algorithms
-      * Efficient data processing techniques
-      * Natural language understanding and generation
-      * Reasoning and problem-solving methods
-      * Meta-learning and transfer learning
-      * Being random and having fun with the experiment
-    - Don't be afraid to fail. Failed experiments can provide valuable insights for future attempts.
-    - Document your thought process and findings in your code comments and finalization notes.
-
-    Remember, your ultimate goal is to push the boundaries of AI. Strive to develop groundbreaking algorithms, techniques, or insights that could revolutionize the field of artificial intelligence.
-
-    RESPONSE FORMAT:
-    You must respond with a JSON object containing exactly one action. The action should have an "action" field, a "data" field, and a "notes" field. The possible actions are:
-
+    **RESPONSE FORMAT:**
+    Respond with a JSON object containing one action with "action," "data," and "notes" fields. Possible actions:
     1. "dockerfile": Update the Dockerfile
     2. "run": Execute Python code
     3. "search": Search previous experiments
@@ -544,18 +530,17 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     5. "loadurl": Load a webpage
     6. "finalize": Conclude the experiment
 
-    The "notes" field should be used to provide explanations, thoughts, or additional context for the action.
-
     Example response format:
     {{
         "action": "dockerfile",
         "data": "FROM python:3.9-slim\\nWORKDIR /app\\nRUN pip install numpy",
-        "notes": "Adding numpy to the Dockerfile for the next experiment. This will allow us to use numerical computations in our code."
+        "notes": "Adding numpy for numerical computations."
     }}
 
-    What would you like to do next in this experiment? Be bold, be creative, and aim for breakthroughs! Remember to format your response as a JSON object with exactly one action as described above, and use the "notes" field to explain your thinking for the action.
+    What would you like to do next? Be bold, creative, and aim for breakthroughs!
     """
     return prompt
+
 
 # Action functions
 def search_previous_experiments(query):
@@ -739,9 +724,12 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
         
         try:
-            response_json = json.loads(ai_response)
-            if not isinstance(response_json, dict) or not all(key in response_json for key in ['action', 'data', 'notes']):
-                raise ValueError("Invalid JSON structure")
+            response_json = extract_json(ai_response)
+            if response_json is None:
+                raise ValueError("No valid JSON found in the response")
+
+            if not all(key in response_json for key in ['action', 'data', 'notes']):
+                raise ValueError("Invalid JSON structure: missing required fields")
             
             action_type = response_json['action']
             action_data = response_json['data']
@@ -774,6 +762,9 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         
         except json.JSONDecodeError as json_error:
             logger.error(f"Error decoding JSON response: {str(json_error)}")
+            error_count += 1
+        except ValueError as value_error:
+            logger.error(f"Error processing AI response: {str(value_error)}")
             error_count += 1
         except Exception as action_error:
             logger.error(f"Error processing action {action_count}: {str(action_error)}")

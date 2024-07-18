@@ -507,7 +507,8 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     - Your main experiment code will be automatically copied into the Docker image as 'experiment.py'.
     - You don't need to use COPY commands for your main experiment code.
     - If you need additional files or dependencies, specify them in the Dockerfile.
-    - Use ENV in the Dockerfile to set environment variables if needed for your code, for example, the API keys from the access_info provided above.
+    - Use ENV in the Dockerfile to set environment variables if needed for your code.
+    - When providing a Dockerfile, do not include markdown code block delimiters (```). Provide only the raw Dockerfile content.
 
     You can perform the following actions:
     1. [DOCKERFILE] <dockerfile content>
@@ -615,6 +616,8 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     def handle_dockerfile_action(response):
         nonlocal current_dockerfile
         current_dockerfile = response[12:].strip()
+        # Remove markdown code block delimiters if present
+        current_dockerfile = current_dockerfile.replace('```dockerfile', '').replace('```', '').strip()
         dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
         os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
         with open(dockerfile_path, 'w') as f:

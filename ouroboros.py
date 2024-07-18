@@ -488,6 +488,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
         max_actions=max_actions,
         time_remaining=time_remaining,
         network_access="Enabled" if network_access else "Disabled",
+        gpu_access="Enabled" if gpu_access else "Disabled",
         prev_data=json.dumps(prev_data, indent=2) if prev_data else 'No previous experiment',
         action_history=json.dumps(action_history, indent=2),
         current_dockerfile=current_dockerfile

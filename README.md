@@ -213,7 +213,7 @@ You can adjust the following parameter sections in the `config.ini` file:
 
 ## AI Prompt Variables
 
-When customizing the AI prompt in the `config.ini` file, you can use the following variables. These will be automatically replaced with the current experiment data:
+When customizing the AI prompt in the `config.ini` file, you can use the following variables to give context to the model. These will be automatically replaced with the current experiment data:
 
 - `{experiment_id}`: The unique identifier for the current experiment.
 - `{current_action}`: The number of the current action in the experiment.

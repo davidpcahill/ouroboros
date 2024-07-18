@@ -598,7 +598,7 @@ def save_experiment_results(experiment_id, action_history, results, final_notes,
                   (experiment_id, json.dumps(action_history), results, final_notes, dockerfile, datetime.now().isoformat()))
         conn.commit()
 
-def save_experiment_log(exp_dir, experiment_id, action_history, results, dockerfile):
+def save_experiment_log(exp_dir, experiment_id, action_history, results, final_notes, dockerfile):
     log_path = os.path.join(exp_dir, 'experiment_log.txt')
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     with open(log_path, 'w') as f:
@@ -606,6 +606,7 @@ def save_experiment_log(exp_dir, experiment_id, action_history, results, dockerf
             "experiment_id": experiment_id,
             "action_history": action_history,
             "results": results,
+            "final_notes": final_notes,
             "dockerfile": dockerfile
         }, f, indent=2)
     logger.info(f"Experiment log saved to {log_path}")
@@ -623,6 +624,16 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     start_time = time.time()
     error_count = 0
     max_errors = int(config.get('Experiment', 'MaxErrors', fallback='3'))
+
+    def extract_json(text):
+        """Extract JSON object from text."""
+        try:
+            start = text.index('{')
+            end = text.rindex('}') + 1
+            json_str = text[start:end]
+            return json.loads(json_str)
+        except ValueError:
+            return None
 
     def handle_dockerfile_action(data):
         nonlocal current_dockerfile
@@ -643,7 +654,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
                 logger.error("Dockerfile test failed. Reverting to previous Dockerfile.")
                 return False
             current_dockerfile = data
-            return True
+            return test_result
         else:
             logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
             return False
@@ -686,7 +697,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
 
     def handle_finalize_action(data):
         logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
-        return True  # Signal to break the loop
+        return "FINALIZE"
 
     action_handlers = {
         'dockerfile': handle_dockerfile_action,
@@ -694,7 +705,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         'search': handle_search_action,
         'google': handle_google_action,
         'loadurl': handle_loadurl_action,
-        'finalize': handle_finalize_action,
+        'finalize': handle_finalize_action
     }
 
     ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
@@ -737,9 +748,15 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
             
             if action_type in action_handlers:
                 result = action_handlers[action_type](action_data)
-                if result is True:  # Finalize action
+                if result == "FINALIZE":  # Finalize action
                     final_notes = action_notes + "\n" + action_data
-                    return action_history, results, final_notes, current_dockerfile
+                    action_history.append({
+                        "action": action_type,
+                        "data": action_data,
+                        "notes": action_notes,
+                        "results": "Experiment finalized"
+                    })
+                    break
                 elif result:
                     results = result
                 action_history.append({
@@ -748,8 +765,6 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
                     "notes": action_notes,
                     "results": results
                 })
-                if action_type == 'dockerfile':
-                    current_dockerfile = action_data
             else:
                 results = f"Unknown action in AI response: {action_type}"
                 logger.warning(results)
@@ -778,44 +793,9 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
 
         error_count = 0  # Reset error count after successful processing of all actions
 
-    # If we've reached this point, we've hit the max actions limit or time limit
+    # If we've reached this point without finalizing, add a final note
     if not final_notes:
-        logger.warning(f"Experiment {experiment_id} ended without explicit finalization.")
-        final_prompt = f"""
-        Experiment #{experiment_id} has ended without explicit finalization.
-        
-        Final Status:
-        - Actions taken: {len(action_history)} of {max_actions}
-        - Time remaining: {max(0, time_limit - (time.time() - start_time)):.2f} seconds
-
-        Here's a summary of your actions and their results:
-        {json.dumps(action_history, indent=2)}
-
-        Current Dockerfile:
-        {current_dockerfile}
-        
-        Based on these actions, results, and the current Dockerfile, please provide final notes for the next AI to continue from this point.
-        Your response MUST be a JSON object with a single "finalize" action, like this:
-        {{
-            "actions": [
-                {{
-                    "action": "finalize",
-                    "data": "",
-                    "notes": "Your final notes here..."
-                }}
-            ]
-        }}
-        """
-        final_response = get_ai_response(final_prompt, api_key)
-        logger.info(f"Final AI response:\n{final_response}")  # Log the full final response
-        try:
-            final_json = json.loads(final_response)
-            if 'actions' in final_json and final_json['actions'][0]['action'] == 'finalize':
-                final_notes = final_json['actions'][0]['notes'] + "\n" + final_json['actions'][0]['data']
-            else:
-                final_notes = "AI failed to provide final notes in the correct format after experiment ended."
-        except json.JSONDecodeError:
-            final_notes = "AI failed to provide final notes in valid JSON format after experiment ended."
+        final_notes = f"Experiment ended after {len(action_history)} actions without explicit finalization."
 
     return action_history, results, final_notes, current_dockerfile
 
@@ -855,13 +835,20 @@ def run_experiment_cycle(docker_client):
             return
         
         prev_data = get_previous_experiment_data(experiment_id)
+        if prev_data:
+            logger.info(f"Retrieved data from previous experiment (ID: {experiment_id - 1})")
+        else:
+            logger.info("No previous experiment data available")
         
         action_history, results, final_notes, dockerfile = run_ai_interaction_loop(
             experiment_id, prev_data, exp_dir, repo, access, docker_client)
 
         save_experiment_results(experiment_id, action_history, results, final_notes, dockerfile)
-        log_path = save_experiment_log(exp_dir, experiment_id, action_history, results, dockerfile)
+        log_path = save_experiment_log(exp_dir, experiment_id, action_history, results, final_notes, dockerfile)
         commit_to_git(repo, f"Experiment {experiment_id}: Save experiment log", [log_path])
+        
+        logger.info(f"Experiment {experiment_id} completed with {len(action_history)} actions")
+        logger.info(f"Final notes: {final_notes}")
         
     except Exception as e:
         logger.error(f"Error in experiment cycle: {str(e)}")

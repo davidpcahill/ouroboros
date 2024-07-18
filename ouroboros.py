@@ -545,7 +545,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     6. [FINALIZE] <notes>
     7. [NOTE] <your thoughts or explanations>
 
-    IMPORTANT: You can use the [NOTE] tag before or after any other action to provide explanations or thoughts. Notes will be recorded but not executed.
+    IMPORTANT: You can use the [NOTE] tag before or after any ONE action to provide explanations or thoughts. Notes will be recorded but not executed. Do not try to run more than one action in a single response!
 
     Example of using notes:
     [NOTE] I'm going to modify the Dockerfile to include numpy for the next experiment.
@@ -553,11 +553,11 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     FROM python:3.9-slim
     RUN pip install numpy
     WORKDIR /app
-
-    [NOTE] Now I'll run a simple test to ensure numpy is installed correctly.
+    # OR
     [RUN]
     import numpy as np
     print(np.__version__)
+    [NOTE] Now I'll run a simple test to ensure numpy is installed correctly.
 
     What would you like to do next in this experiment? Be bold, be creative, and aim for breakthroughs! Remember to start your response with one of the action tags listed above.
     """

@@ -462,7 +462,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
         2. Update Dockerfile only when necessary.
         3. Use "finalize" to end the experiment.
 
-        Respond with a JSON object:
+        Respond ONLY with the following JSON structure:
         {{
             "action": "run/dockerfile/search/google/loadurl/finalize",
             "data": "action data",

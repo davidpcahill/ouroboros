@@ -245,6 +245,9 @@ Current experiment action history:
 
 Current Dockerfile:
 {current_dockerfile}
+
+Access Credentials:
+{access_info}
 ```
 
 You can use these variables to provide context to the AI about the current state of the experiment and its environment.

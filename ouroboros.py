@@ -266,18 +266,9 @@ def create_docker_client():
 
 def run_in_docker(client, container, code, exp_dir):
     try:
-        # Create experiment.py file
-        code_path = os.path.join(exp_dir, 'experiment.py')
-        with open(code_path, 'w') as f:
-            f.write(code)
-
-        # Copy the code to the container
-        with open(code_path, 'rb') as f:
-            container.put_archive("/app", f.read())
-
-        # Execute the code
+        # Execute the code directly in the container
         exit_code, output = container.exec_run(
-            cmd=["python", "/app/experiment.py"],
+            cmd=["python", "-c", code],
             demux=True
         )
 
@@ -720,7 +711,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         initial_container = docker_client.containers.create(
             "python:3.9-slim",
             command="tail -f /dev/null",  # Keep container running
-            volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},  # Changed 'ro' to 'rw'
+            volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},
             mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
             cpu_period=100000,
             cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
@@ -733,7 +724,8 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         logger.info("Initial Docker container started successfully")
 
         # Run the test
-        test_result = run_in_docker(docker_client, initial_container, "print('Initial Dockerfile test successful')", exp_dir)
+        test_code = "print('Initial Dockerfile test successful')"
+        test_result = run_in_docker(docker_client, initial_container, test_code, exp_dir)
         logger.info(f"Initial Dockerfile test result: {test_result}")
 
     except docker.errors.APIError as e:

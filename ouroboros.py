@@ -655,6 +655,10 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         action_history.append({"action": "RUN", "code": code, "results": results})
         commit_to_git(repo, f"Experiment {experiment_id}: Run code", [code_path, results_path])
         logger.info(f"Code executed for experiment {experiment_id}")
+        logger.info(f"{'='*50}")
+        logger.info(f"Docker execution results for experiment {experiment_id}:")
+        logger.info(results)
+        logger.info(f"{'='*50}")
 
     def handle_search_action(response):
         nonlocal results

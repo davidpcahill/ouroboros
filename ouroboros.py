@@ -437,6 +437,41 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     network_access = config.getboolean('Docker', 'NetworkAccess', fallback=False)
     gpu_access = config.getboolean('Docker', 'GPUAccess', fallback=False)
     
+    # Get the prompt from the config file
+    prompt_template = config.get('AIPrompt', 'PROMPT', fallback=None)
+    
+    # If no prompt is found in the config, use a fallback prompt
+    if not prompt_template:
+        prompt_template = """
+        Experiment #{experiment_id}
+
+        You are Ouroboros, an AI system for self-improvement and AI research.
+
+        Status:
+        - Action: {current_action}/{max_actions}
+        - Time left: {time_remaining:.2f}s
+        - Network: {network_access}
+        - GPU: {gpu_access}
+
+        Previous data: {prev_data}
+        Action history: {action_history}
+        Dockerfile: {current_dockerfile}
+
+        Instructions:
+        1. Run code to advance AI research.
+        2. Update Dockerfile only when necessary.
+        3. Use "finalize" to end the experiment.
+
+        Respond with a JSON object:
+        {{
+            "action": "run/dockerfile/search/google/loadurl/finalize",
+            "data": "action data",
+            "notes": "explanation"
+        }}
+
+        Be creative and push AI boundaries!
+        """
+    
     # Log detailed information about the context
     logger.info(f"Preparing AI prompt for Experiment {experiment_id}")
     logger.info(f"Current action: {current_action}/{max_actions}")
@@ -446,61 +481,19 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     logger.info(f"Action history: {', '.join([f'{action['action']} ({action['notes'][:30]}...)' for action in action_history])}")
     logger.info(f"Current Dockerfile:\n{current_dockerfile}")
 
-    prompt = f"""
-    Experiment #{experiment_id}
+    # Format the prompt with the current experiment data
+    formatted_prompt = prompt_template.format(
+        experiment_id=experiment_id,
+        current_action=current_action,
+        max_actions=max_actions,
+        time_remaining=time_remaining,
+        network_access="Enabled" if network_access else "Disabled",
+        prev_data=json.dumps(prev_data, indent=2) if prev_data else 'No previous experiment',
+        action_history=json.dumps(action_history, indent=2),
+        current_dockerfile=current_dockerfile
+    )
 
-    You are Ouroboros, an advanced AI system designed to self-improve and push the boundaries of AI research through innovative experiments.
-
-    Current Status:
-    - Action: {current_action} of {max_actions}
-    - Time remaining: {time_remaining:.2f} seconds
-    - Network access: {"Enabled" if network_access else "Disabled"}
-    - GPU access: {"Enabled" if gpu_access else "Disabled"}
-
-    Previous experiment data:
-    {json.dumps(prev_data, indent=2) if prev_data else 'No previous experiment'}
-
-    Current experiment action history:
-    {json.dumps(action_history, indent=2)}
-
-    Current Dockerfile:
-    {current_dockerfile}
-
-    IMPORTANT INSTRUCTIONS:
-    1. Prioritize running code over updating the Dockerfile. Only update the Dockerfile when absolutely necessary for your experiments.
-    2. Aim to write and execute Python code that advances AI research or demonstrates novel concepts.
-    3. Use the "run" action to execute your Python code in the Docker environment.
-    4. Only use the "dockerfile" action if you need a new library or environment setup that's crucial for your next experiment.
-    5. Remember that each experiment should build upon the previous ones, aiming for continuous improvement and innovation.
-    6. **Experiment Lifecycle:**
-       - Each experiment runs in isolation with a maximum of {max_actions} actions.
-       - Use "finalize" on or before the last action.
-
-    **EXPERIMENTATION GUIDELINES:**
-    - Be creative and ambitious. Start simple if it's your first experiment.
-    - Build on previous results, focusing on self-improvement and advancing AI research.
-    - Explore areas such as novel ML algorithms, efficient data processing, NLP, reasoning, meta-learning, or even fun experiments.
-    - Document your process and findings in your code comments and final notes.
-
-    **RESPONSE FORMAT:**
-    Respond with a JSON object containing one action with "action," "data," and "notes" fields. Possible actions:
-    1. "dockerfile": Update the Dockerfile (creates a new container with the updated environment)
-    2. "run": Execute Python code (runs in the current container)
-    3. "search": Search previous experiments
-    4. "google": Perform a Google search
-    5. "loadurl": Load a webpage
-    6. "finalize": Conclude the experiment
-
-    Example response format:
-    {{
-        "action": "dockerfile",
-        "data": "FROM python:3.9-slim\\nWORKDIR /app\\nRUN pip install numpy",
-        "notes": "Adding numpy for numerical computations."
-    }}
-
-    What would you like to do next? Be bold, creative, and aim for breakthroughs!
-    """  
-    return prompt
+    return formatted_prompt
 
 # Action functions
 def search_previous_experiments(query):

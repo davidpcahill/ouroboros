@@ -579,8 +579,8 @@ def extract_json(text):
     except ValueError:
         return None
 
-def handle_dockerfile_action(data):
-    nonlocal current_dockerfile, current_image, current_container
+# Dockerfile and run code actions
+def dockerfile_action(data, exp_dir, repo, experiment_id, docker_client):
     dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
     os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
     with open(dockerfile_path, 'w') as f:
@@ -589,55 +589,45 @@ def handle_dockerfile_action(data):
         commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
         logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
         
-        # Clean up previous container and image if they exist
-        if current_container:
-            current_container.remove(force=True)
-            current_container = None
-        if current_image:
-            docker_client.images.remove(current_image.id, force=True)
-            current_image = None
-
         # Build new image
         logger.info("Building new Docker image...")
         try:
-            current_image, _ = docker_client.images.build(
+            image, _ = docker_client.images.build(
                 path=exp_dir,
                 dockerfile='Dockerfile',
                 rm=True
             )
-            logger.info(f"New Docker image built successfully: {current_image.id}")
+            logger.info(f"New Docker image built successfully: {image.id}")
 
             # Create new container
             logger.info("Creating new Docker container...")
-            current_container = docker_client.containers.create(
-                current_image.id,
+            container = docker_client.containers.create(
+                image.id,
                 command="tail -f /dev/null",  # Keep container running
-                volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},  # Changed 'ro' to 'rw'
+                volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},
                 mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
                 cpu_period=100000,
                 cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
                 network_mode='none'
             )
-            logger.info(f"New Docker container created: {current_container.id}")
+            logger.info(f"New Docker container created: {container.id}")
 
             # Start the container
-            current_container.start()
+            container.start()
             logger.info("New Docker container started successfully")
 
-            current_dockerfile = data
-            return "Dockerfile updated and new container is ready for code execution."
+            return "Dockerfile updated and new container is ready for code execution.", data, image, container
         except docker.errors.BuildError as e:
             logger.error(f"Docker build error: {str(e)}")
-            return f"Error building Docker image: {str(e)}"
+            return f"Error building Docker image: {str(e)}", None, None, None
         except docker.errors.APIError as e:
             logger.error(f"Docker API error: {str(e)}")
-            return f"Error in Docker operation: {str(e)}"
+            return f"Error in Docker operation: {str(e)}", None, None, None
     else:
         logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
-        return "Failed to create Dockerfile"
+        return "Failed to create Dockerfile", None, None, None
 
-def handle_run_action(data):
-    nonlocal results
+def run_action(data, docker_client, current_container, exp_dir, repo, experiment_id):
     if not current_container:
         return "No Docker container available. Please update the Dockerfile first."
 
@@ -657,36 +647,6 @@ def handle_run_action(data):
 
     return results
 
-def handle_search_action(data):
-    search_results = search_previous_experiments(data)
-    results = json.dumps(search_results, indent=2)
-    logger.info(f"Search performed for query: {data}")
-    return results
-
-def handle_google_action(data):
-    search_results = google_search(data)
-    results = json.dumps(search_results, indent=2)
-    logger.info(f"Google search performed for query: {data}")
-    return results
-
-def handle_loadurl_action(data):
-    webpage_content = load_webpage(data)
-    logger.info(f"Webpage loaded: {data}")
-    return webpage_content
-
-def handle_finalize_action(data):
-    logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
-    return "FINALIZE"
-
-action_handlers = {
-    'dockerfile': handle_dockerfile_action,
-    'run': handle_run_action,
-    'search': handle_search_action,
-    'google': handle_google_action,
-    'loadurl': handle_loadurl_action,
-    'finalize': handle_finalize_action
-}
-
 # Main experiment cycle
 def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, docker_client):
     action_history = []
@@ -700,6 +660,54 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     start_time = time.time()
     error_count = 0
     max_errors = int(config.get('Experiment', 'MaxErrors', fallback='3'))
+
+    def handle_dockerfile_action(data):
+        nonlocal current_dockerfile, current_image, current_container
+        result, new_dockerfile, new_image, new_container = dockerfile_action(data, exp_dir, repo, experiment_id, docker_client)
+        if new_dockerfile:
+            current_dockerfile = new_dockerfile
+        if new_image:
+            if current_image:
+                docker_client.images.remove(current_image.id, force=True)
+            current_image = new_image
+        if new_container:
+            if current_container:
+                current_container.remove(force=True)
+            current_container = new_container
+        return result
+
+    def handle_run_action(data):
+        return run_action(data, docker_client, current_container, exp_dir, repo, experiment_id)
+
+    def handle_search_action(data):
+        search_results = search_previous_experiments(data)
+        results = json.dumps(search_results, indent=2)
+        logger.info(f"Search performed for query: {data}")
+        return results
+
+    def handle_google_action(data):
+        search_results = google_search(data)
+        results = json.dumps(search_results, indent=2)
+        logger.info(f"Google search performed for query: {data}")
+        return results
+
+    def handle_loadurl_action(data):
+        webpage_content = load_webpage(data)
+        logger.info(f"Webpage loaded: {data}")
+        return webpage_content
+
+    def handle_finalize_action(data):
+        logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
+        return "FINALIZE"
+
+    action_handlers = {
+        'dockerfile': handle_dockerfile_action,
+        'run': handle_run_action,
+        'search': handle_search_action,
+        'google': handle_google_action,
+        'loadurl': handle_loadurl_action,
+        'finalize': handle_finalize_action
+    }
 
     # Create a detailed log file for the experiment
     experiment_log_path = os.path.join(exp_dir, f'experiment_{experiment_id}_detailed_log.txt')

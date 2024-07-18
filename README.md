@@ -189,6 +189,14 @@ What would you like to do next? Be bold, creative, and aim for breakthroughs!
    ```
 > **Note:** You can use access.txt.example as a template.
 
+## Usage
+
+Run the Ouroboros system:
+
+`python ouroboros.py`
+
+The system will start running experiments in cycles, with each cycle lasting up to the specified time limit or until the maximum number of actions is reached.
+
 ## Configuration
 
 You can adjust the following parameter sections in the `config.ini` file:
@@ -251,14 +259,6 @@ Access Credentials:
 ```
 
 You can use these variables to provide context to the AI about the current state of the experiment and its environment.
-
-## Usage
-
-Run the Ouroboros system:
-
-`python ouroboros.py`
-
-The system will start running experiments in cycles, with each cycle lasting up to the specified time limit or until the maximum number of actions is reached.
 
 ## Contribute
 

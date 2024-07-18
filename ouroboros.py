@@ -460,7 +460,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
         Instructions:
         1. Run code to advance AI research.
         2. Update Dockerfile only when necessary.
-        3. Use "finalize" to end the experiment.
+        3. Use "finalize" to end the experiment on or before {max_actions} actions.
 
         Respond ONLY with the following JSON structure:
         {{

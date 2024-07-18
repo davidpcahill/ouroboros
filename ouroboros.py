@@ -535,7 +535,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     Remember, your ultimate goal is to push the boundaries of AI. Strive to develop groundbreaking algorithms, techniques, or insights that could revolutionize the field of artificial intelligence.
 
     RESPONSE FORMAT:
-    You must respond with a JSON object containing one or more actions. Each action should have an "action" field, a "data" field, and an optional "notes" field. The possible actions are:
+    You must respond with a JSON object containing exactly one action. The action should have an "action" field, a "data" field, and a "notes" field. The possible actions are:
 
     1. "dockerfile": Update the Dockerfile
     2. "run": Execute Python code
@@ -543,25 +543,17 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     4. "google": Perform a Google search
     5. "loadurl": Load a webpage
     6. "finalize": Conclude the experiment
-    7. "note": Add a note or explanation
+
+    The "notes" field should be used to provide explanations, thoughts, or additional context for the action.
 
     Example response format:
-    {
-        "actions": [
-            {
-                "action": "dockerfile",
-                "data": "FROM python:3.9-slim\\nWORKDIR /app\\nRUN pip install numpy",
-                "notes": "Adding numpy to the Dockerfile for the next experiment."
-            },
-            {
-                "action": "run",
-                "data": "import numpy as np\\nprint(np.__version__)",
-                "notes": "Verifying numpy installation and printing its version."
-            }
-        ]
-    }
+    {{
+        "action": "dockerfile",
+        "data": "FROM python:3.9-slim\\nWORKDIR /app\\nRUN pip install numpy",
+        "notes": "Adding numpy to the Dockerfile for the next experiment. This will allow us to use numerical computations in our code."
+    }}
 
-    What would you like to do next in this experiment? Be bold, be creative, and aim for breakthroughs! Remember to format your response as a JSON object with one or more actions as described above.
+    What would you like to do next in this experiment? Be bold, be creative, and aim for breakthroughs! Remember to format your response as a JSON object with exactly one action as described above, and use the "notes" field to explain your thinking for the action.
     """
     return prompt
 
@@ -711,10 +703,6 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
         return True  # Signal to break the loop
 
-    def handle_note_action(data):
-        logger.info(f"AI Note: {data}")
-        return None  # Notes don't produce results
-
     action_handlers = {
         'dockerfile': handle_dockerfile_action,
         'run': handle_run_action,
@@ -722,7 +710,6 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         'google': handle_google_action,
         'loadurl': handle_loadurl_action,
         'finalize': handle_finalize_action,
-        'note': handle_note_action
     }
 
     ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
@@ -753,36 +740,37 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         
         try:
             response_json = json.loads(ai_response)
-            if not isinstance(response_json, dict) or 'actions' not in response_json:
+            if not isinstance(response_json, dict) or not all(key in response_json for key in ['action', 'data', 'notes']):
                 raise ValueError("Invalid JSON structure")
             
-            for action in response_json['actions']:
-                action_type = action.get('action')
-                action_data = action.get('data', '')
-                action_notes = action.get('notes', '')
-                
-                if action_type in action_handlers:
-                    result = action_handlers[action_type](action_data)
-                    if result is True:  # Finalize action
-                        final_notes = action_notes + "\n" + action_data
-                        return action_history, results, final_notes, current_dockerfile
-                    elif result:
-                        results = result
-                    action_history.append({
-                        "action": action_type,
-                        "data": action_data,
-                        "notes": action_notes,
-                        "results": results
-                    })
-                else:
-                    results = f"Unknown action in AI response: {action_type}"
-                    logger.warning(results)
-                    action_history.append({
-                        "action": "UNKNOWN",
-                        "data": action_data,
-                        "notes": action_notes,
-                        "results": results
-                    })
+            action_type = response_json['action']
+            action_data = response_json['data']
+            action_notes = response_json['notes']
+            
+            if action_type in action_handlers:
+                result = action_handlers[action_type](action_data)
+                if result is True:  # Finalize action
+                    final_notes = action_notes + "\n" + action_data
+                    return action_history, results, final_notes, current_dockerfile
+                elif result:
+                    results = result
+                action_history.append({
+                    "action": action_type,
+                    "data": action_data,
+                    "notes": action_notes,
+                    "results": results
+                })
+                if action_type == 'dockerfile':
+                    current_dockerfile = action_data
+            else:
+                results = f"Unknown action in AI response: {action_type}"
+                logger.warning(results)
+                action_history.append({
+                    "action": "UNKNOWN",
+                    "data": action_data,
+                    "notes": action_notes,
+                    "results": results
+                })
         
         except json.JSONDecodeError as json_error:
             logger.error(f"Error decoding JSON response: {str(json_error)}")

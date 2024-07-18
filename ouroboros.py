@@ -520,14 +520,6 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     - The experiment will automatically end when you finalize, reach the maximum actions, or when the time limit is reached.
     - Feel free to end the experiment early if you have achieved your goals or if you are stuck.
 
-    Available Actions (Your response MUST start with one of these tags):
-    1. [DOCKERFILE] <dockerfile content>
-    2. [RUN] <python code>
-    3. [SEARCH] <query>
-    4. [GOOGLE] <query>
-    5. [LOADURL] <url>
-    6. [FINALIZE] <notes>
-
     EXPERIMENTATION GUIDELINES:
     - Be creative and ambitious in your experiments. Don't hesitate to try new approaches or unconventional ideas.
     - If this is your first experiment or you have no previous data, start with a simple experiment to establish a baseline.
@@ -543,6 +535,29 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     - Document your thought process and findings in your code comments and finalization notes.
 
     Remember, your ultimate goal is to push the boundaries of AI. Strive to develop groundbreaking algorithms, techniques, or insights that could revolutionize the field of artificial intelligence.
+
+    Available Actions (Your response MUST start with one of these tags):
+    1. [DOCKERFILE] <dockerfile content>
+    2. [RUN] <python code>
+    3. [SEARCH] <query>
+    4. [GOOGLE] <query>
+    5. [LOADURL] <url>
+    6. [FINALIZE] <notes>
+    7. [NOTE] <your thoughts or explanations>
+
+    IMPORTANT: You can use the [NOTE] tag before or after any other action to provide explanations or thoughts. Notes will be recorded but not executed.
+
+    Example of using notes:
+    [NOTE] I'm going to modify the Dockerfile to include numpy for the next experiment.
+    [DOCKERFILE]
+    FROM python:3.9-slim
+    RUN pip install numpy
+    WORKDIR /app
+
+    [NOTE] Now I'll run a simple test to ensure numpy is installed correctly.
+    [RUN]
+    import numpy as np
+    print(np.__version__)
 
     What would you like to do next in this experiment? Be bold, be creative, and aim for breakthroughs! Remember to start your response with one of the action tags listed above.
     """
@@ -705,13 +720,19 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
         return True  # Signal to break the loop
 
+    def handle_note_action(response):
+        note = response[6:].strip()
+        logger.info(f"AI Note: {note}")
+        action_history.append({"action": "NOTE", "content": note})
+
     action_handlers = {
         '[DOCKERFILE]': handle_dockerfile_action,
         '[RUN]': handle_run_action,
         '[SEARCH]': handle_search_action,
         '[GOOGLE]': handle_google_action,
         '[LOADURL]': handle_loadurl_action,
-        '[FINALIZE]': handle_finalize_action
+        '[FINALIZE]': handle_finalize_action,
+        '[NOTE]': handle_note_action
     }
 
     ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
@@ -740,32 +761,34 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         
         logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
         
-        if ai_response.startswith("Error:"):
-            logger.error(f"AI response error: {ai_response}")
-            print(f"Error in AI response: {ai_response}")
-            error_count += 1
-            if error_count >= max_errors:
-                logger.error(f"Stopping experiment after {max_errors} consecutive errors")
-                break
-            continue
-        else:
-            error_count = 0
-
-        logger.info(f"AI response received: {ai_response[:50]}...")  # Log first 50 chars of response
+        # Split the AI response into individual actions
+        ai_actions = [action.strip() for action in ai_response.split('\n') if action.strip()]
         
-        try:
-            action_type = ai_response.split()[0]
-            if action_type in action_handlers:
-                if action_handlers[action_type](ai_response):
-                    break  # Break the loop if finalize action is handled
-            else:
-                results = f"Unknown action in AI response: {ai_response[:100]}..."
-                logger.warning(results)
-                action_history.append({"action": "UNKNOWN", "response": ai_response, "results": results})
-        except Exception as action_error:
-            logger.error(f"Error processing action {action_count}: {str(action_error)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            action_history.append({"action": "ERROR", "error": str(action_error)})
+        for action in ai_actions:
+            if action.startswith("Error:"):
+                logger.error(f"AI response error: {action}")
+                print(f"Error in AI response: {action}")
+                error_count += 1
+                if error_count >= max_errors:
+                    logger.error(f"Stopping experiment after {max_errors} consecutive errors")
+                    return action_history, results, ai_notes, current_dockerfile
+                continue
+            
+            try:
+                action_type = action.split()[0]
+                if action_type in action_handlers:
+                    if action_handlers[action_type](action):
+                        return action_history, results, ai_notes, current_dockerfile  # Exit if [FINALIZE] is handled
+                else:
+                    results = f"Unknown action in AI response: {action[:100]}..."
+                    logger.warning(results)
+                    action_history.append({"action": "UNKNOWN", "response": action, "results": results})
+            except Exception as action_error:
+                logger.error(f"Error processing action {action_count}: {str(action_error)}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                action_history.append({"action": "ERROR", "error": str(action_error)})
+
+        error_count = 0  # Reset error count after successful processing of all actions
 
     # If we've reached this point, we've hit the max actions limit or time limit
     if not ai_notes:

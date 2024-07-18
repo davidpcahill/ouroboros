@@ -623,6 +623,15 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         if os.path.exists(dockerfile_path):
             commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
             logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
+            
+            # Test the new Dockerfile
+            logger.info("Testing new Dockerfile...")
+            test_result = run_in_docker(docker_client, current_dockerfile, "print('Dockerfile test successful')", exp_dir)
+            logger.info(f"Dockerfile test result: {test_result}")
+            
+            if "Dockerfile test successful" not in test_result:
+                logger.error("Dockerfile test failed. Reverting to previous Dockerfile.")
+                current_dockerfile = action_history[-2]["content"] if len(action_history) > 1 else "FROM python:3.9-slim\nWORKDIR /app\n"
         else:
             logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
 
@@ -683,6 +692,11 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
 
     ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
     api_key = access['ANTHROPIC_API_KEY'] if ai_provider == 'claude' else access['OPENAI_API_KEY']
+
+    # Test initial Dockerfile
+    logger.info("Testing initial Dockerfile...")
+    test_result = run_in_docker(docker_client, current_dockerfile, "print('Initial Dockerfile test successful')", exp_dir)
+    logger.info(f"Initial Dockerfile test result: {test_result}")
 
     for action_count in range(1, max_actions + 1):
         time_elapsed = time.time() - start_time

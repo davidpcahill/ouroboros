@@ -456,6 +456,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
         Previous data: {prev_data}
         Action history: {action_history}
         Dockerfile: {current_dockerfile}
+        Access Info: {access_info}
 
         Instructions:
         1. Run code to advance AI research.
@@ -478,8 +479,18 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     logger.info(f"Time remaining: {time_remaining:.2f} seconds")
     logger.info(f"Network access: {'Enabled' if network_access else 'Disabled'}")
     logger.info(f"GPU access: {'Enabled' if gpu_access else 'Disabled'}")
-    logger.info(f"Action history: {', '.join([f'{action['action']} ({action['notes'][:30]}...)' for action in action_history])}")
+    
+    # Enhanced logging of action history
+    logger.info("Action history:")
+    for i, action in enumerate(action_history, 1):
+        logger.info(f"  Action {i}:")
+        logger.info(f"    Type: {action['action']}")
+        logger.info(f"    Notes: {action['notes'][:50]}...")  # First 50 characters of notes
+        logger.info(f"    Data: {action['data'][:50]}...")    # First 50 characters of data
+        logger.info(f"    Results: {str(action.get('results', ''))[:50]}...")  # First 50 characters of results
+
     logger.info(f"Current Dockerfile:\n{current_dockerfile}")
+    #logger.info(f"Access Info: {json.dumps(access_info, indent=2)}")
 
     # Format the prompt with the current experiment data
     formatted_prompt = prompt_template.format(
@@ -491,7 +502,8 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
         gpu_access="Enabled" if gpu_access else "Disabled",
         prev_data=json.dumps(prev_data, indent=2) if prev_data else 'No previous experiment',
         action_history=json.dumps(action_history, indent=2),
-        current_dockerfile=current_dockerfile
+        current_dockerfile=current_dockerfile,
+        access_info=json.dumps(access_info, indent=2)
     )
 
     return formatted_prompt

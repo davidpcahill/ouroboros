@@ -61,6 +61,9 @@ Current experiment action history:
 Current Dockerfile:
 {current_dockerfile}
 
+Access Information:
+{access_info}
+
 IMPORTANT INSTRUCTIONS:
 1. Prioritize running code over updating the Dockerfile. Only update the Dockerfile when absolutely necessary for your experiments.
 2. Aim to write and execute Python code that advances AI research or demonstrates novel concepts.
@@ -70,6 +73,7 @@ IMPORTANT INSTRUCTIONS:
 6. **Experiment Lifecycle:**
    - Each experiment runs in isolation with a maximum of {max_actions} actions.
    - Use "finalize" on or before the last action.
+7. Any optional access information will only work if network access is enabled.
 
 **EXPERIMENTATION GUIDELINES:**
 - Be creative and ambitious. Start simple if it's your first experiment.

@@ -224,6 +224,7 @@ When customizing the AI prompt in the `config.ini` file, you can use the followi
 - `{prev_data}`: Data from the previous experiment, if available.
 - `{action_history}`: A JSON-formatted string containing the history of actions taken in the current experiment.
 - `{current_dockerfile}`: The current content of the Dockerfile.
+- `{access_info}`: A JSON-formatted string containing additional API keys or credentials provided in the access.txt file.
 
 Example usage in the prompt:
 

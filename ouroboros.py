@@ -472,7 +472,7 @@ def get_openai_response(prompt, api_key):
 
 def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, current_action, max_actions, time_remaining, access_info):
     network_access = config.getboolean('Docker', 'NetworkAccess', fallback=False)
-    return f"""
+    prompt = f"""
     Experiment #{experiment_id}
 
     You are Ouroboros, an advanced AI system designed to improve itself, further AI research, and experiment freely. Your ultimate goal is to push the boundaries of AI capabilities and knowledge through continuous self-improvement and innovative experimentation.
@@ -493,21 +493,19 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
 
     IMPORTANT INSTRUCTIONS:
     1. Docker Environment:
-    - You have full control over the Dockerfile. Modify it using the [DOCKERFILE] action.
+    - You have full control over the Dockerfile. Modify it using the "dockerfile" action.
     - Your main experiment code will be automatically copied into the Docker image as 'experiment.py'.
     - Do NOT use COPY commands for your main experiment code.
     - Specify additional files or dependencies in the Dockerfile if needed.
     - Use ENV in the Dockerfile to set environment variables only if your experiment specifically requires them. API keys from the access_info are available but should not influence your experiment design unless absolutely necessary.
-    - When providing a Dockerfile, do NOT include markdown code block delimiters (```). Provide only the raw Dockerfile content.
 
     2. Code Execution:
-    - Use the [RUN] action to execute your Python code in the Docker environment.
-    - When providing code for the [RUN] action, provide only the raw Python code.
+    - Use the "run" action to execute your Python code in the Docker environment.
     - The system will automatically wait for the results before prompting you for the next action.
 
     3. Network Access:
     - If Network access is disabled, you cannot access external URLs or APIs from your Docker container.
-    - GOOGLE and LOADURL actions will still work if enabled separately by the human operator.
+    - "google" and "loadurl" actions will still work if enabled separately by the human operator.
 
     4. API Keys and Credentials:
     {json.dumps(access_info, indent=2)}
@@ -516,7 +514,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     5. Experiment Lifecycle:
     - Each experiment runs in isolation. Variables and state are not preserved between runs.
     - You have a maximum of {max_actions} actions per experiment cycle.
-    - On action {max_actions}, you should use [FINALIZE] to conclude the experiment.
+    - On action {max_actions}, you should use the "finalize" action to conclude the experiment.
     - The experiment will automatically end when you finalize, reach the maximum actions, or when the time limit is reached.
     - Feel free to end the experiment early if you have achieved your goals or if you are stuck.
 
@@ -536,31 +534,36 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
 
     Remember, your ultimate goal is to push the boundaries of AI. Strive to develop groundbreaking algorithms, techniques, or insights that could revolutionize the field of artificial intelligence.
 
-    Available Actions (Your response MUST start with one of these tags):
-    1. [DOCKERFILE] <dockerfile content>
-    2. [RUN] <python code>
-    3. [SEARCH] <query>
-    4. [GOOGLE] <query>
-    5. [LOADURL] <url>
-    6. [FINALIZE] <notes>
-    7. [NOTE] <your thoughts or explanations>
+    RESPONSE FORMAT:
+    You must respond with a JSON object containing one or more actions. Each action should have an "action" field, a "data" field, and an optional "notes" field. The possible actions are:
 
-    IMPORTANT: You can use the [NOTE] tag before or after any ONE action to provide explanations or thoughts. Notes will be recorded but not executed. Do not try to run more than one action in a single response!
+    1. "dockerfile": Update the Dockerfile
+    2. "run": Execute Python code
+    3. "search": Search previous experiments
+    4. "google": Perform a Google search
+    5. "loadurl": Load a webpage
+    6. "finalize": Conclude the experiment
+    7. "note": Add a note or explanation
 
-    Example of using notes:
-    [NOTE] I'm going to modify the Dockerfile to include numpy for the next experiment.
-    [DOCKERFILE]
-    FROM python:3.9-slim
-    RUN pip install numpy
-    WORKDIR /app
-    # OR
-    [RUN]
-    import numpy as np
-    print(np.__version__)
-    [NOTE] Now I'll run a simple test to ensure numpy is installed correctly.
+    Example response format:
+    {
+        "actions": [
+            {
+                "action": "dockerfile",
+                "data": "FROM python:3.9-slim\\nWORKDIR /app\\nRUN pip install numpy",
+                "notes": "Adding numpy to the Dockerfile for the next experiment."
+            },
+            {
+                "action": "run",
+                "data": "import numpy as np\\nprint(np.__version__)",
+                "notes": "Verifying numpy installation and printing its version."
+            }
+        ]
+    }
 
-    What would you like to do next in this experiment? Be bold, be creative, and aim for breakthroughs! Remember to start your response with one of the action tags listed above.
+    What would you like to do next in this experiment? Be bold, be creative, and aim for breakthroughs! Remember to format your response as a JSON object with one or more actions as described above.
     """
+    return prompt
 
 # Action functions
 def search_previous_experiments(query):
@@ -611,14 +614,14 @@ def get_previous_experiment_data(experiment_id):
         c.execute("SELECT code, results, ai_notes, dockerfile FROM experiments WHERE id = ?", (experiment_id - 1,))
         return c.fetchone()
 
-def save_experiment_results(experiment_id, action_history, results, ai_notes, dockerfile):
+def save_experiment_results(experiment_id, action_history, results, final_notes, dockerfile):
     with sqlite3.connect('ouroboros.db') as conn:
         c = conn.cursor()
         c.execute("INSERT INTO experiments (id, code, results, ai_notes, dockerfile, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                  (experiment_id, json.dumps(action_history), results, ai_notes, dockerfile, datetime.now().isoformat()))
+                  (experiment_id, json.dumps(action_history), results, final_notes, dockerfile, datetime.now().isoformat()))
         conn.commit()
 
-def save_experiment_log(exp_dir, experiment_id, action_history, results, ai_notes, dockerfile):
+def save_experiment_log(exp_dir, experiment_id, action_history, results, dockerfile):
     log_path = os.path.join(exp_dir, 'experiment_log.txt')
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     with open(log_path, 'w') as f:
@@ -626,7 +629,6 @@ def save_experiment_log(exp_dir, experiment_id, action_history, results, ai_note
             "experiment_id": experiment_id,
             "action_history": action_history,
             "results": results,
-            "ai_notes": ai_notes,
             "dockerfile": dockerfile
         }, f, indent=2)
     logger.info(f"Experiment log saved to {log_path}")
@@ -637,7 +639,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     action_history = []
     current_dockerfile = "FROM python:3.9-slim\nWORKDIR /app\n"
     results = ""
-    ai_notes = ""
+    final_notes = ""
 
     max_actions = int(config.get('Experiment', 'MaxActions', fallback='10'))
     time_limit = float(config.get('Experiment', 'TimeLimit', fallback='3600'))
@@ -645,94 +647,82 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     error_count = 0
     max_errors = int(config.get('Experiment', 'MaxErrors', fallback='3'))
 
-    def handle_dockerfile_action(response):
+    def handle_dockerfile_action(data):
         nonlocal current_dockerfile
-        current_dockerfile = response[12:].strip()
-        # Remove markdown code block delimiters if present
-        current_dockerfile = current_dockerfile.replace('```dockerfile', '').replace('```', '').strip()
         dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
         os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
         with open(dockerfile_path, 'w') as f:
-            f.write(current_dockerfile)
-        action_history.append({"action": "DOCKERFILE", "content": current_dockerfile})
+            f.write(data)
         if os.path.exists(dockerfile_path):
             commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
             logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
             
             # Test the new Dockerfile
             logger.info("Testing new Dockerfile...")
-            test_result = run_in_docker(docker_client, current_dockerfile, "print('Dockerfile test successful')", exp_dir)
+            test_result = run_in_docker(docker_client, data, "print('Dockerfile test successful')", exp_dir)
             logger.info(f"Dockerfile test result: {test_result}")
             
             if "Dockerfile test successful" not in test_result:
                 logger.error("Dockerfile test failed. Reverting to previous Dockerfile.")
-                current_dockerfile = action_history[-2]["content"] if len(action_history) > 1 else "FROM python:3.9-slim\nWORKDIR /app\n"
+                return False
+            current_dockerfile = data
+            return True
         else:
             logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
+            return False
 
-    def handle_run_action(response):
+    def handle_run_action(data):
         nonlocal results
-        code = response[5:].strip()
-        # Remove markdown code block delimiters if present
-        code = code.replace('```python', '').replace('```', '').strip()
         code_path = os.path.join(exp_dir, 'experiment.py')
         os.makedirs(os.path.dirname(code_path), exist_ok=True)
         with open(code_path, 'w') as f:
-            f.write(code)
-        results = run_in_docker(docker_client, current_dockerfile, code, exp_dir)
+            f.write(data)
+        results = run_in_docker(docker_client, current_dockerfile, data, exp_dir)
         results_path = os.path.join(exp_dir, 'results.txt')
         os.makedirs(os.path.dirname(results_path), exist_ok=True)
         with open(results_path, 'w') as f:
             f.write(results)
-        action_history.append({"action": "RUN", "code": code, "results": results})
         commit_to_git(repo, f"Experiment {experiment_id}: Run code", [code_path, results_path])
         logger.info(f"Code executed for experiment {experiment_id}")
         logger.info(f"{'='*50}")
         logger.info(f"Docker execution results for experiment {experiment_id}:")
         logger.info(results)
         logger.info(f"{'='*50}")
+        return results
 
-    def handle_search_action(response):
-        nonlocal results
-        query = response[8:].strip()
-        search_results = search_previous_experiments(query)
+    def handle_search_action(data):
+        search_results = search_previous_experiments(data)
         results = json.dumps(search_results, indent=2)
-        action_history.append({"action": "SEARCH", "query": query, "results": results})
-        logger.info(f"Search performed for query: {query}")
+        logger.info(f"Search performed for query: {data}")
+        return results
 
-    def handle_google_action(response):
-        nonlocal results
-        query = response[8:].strip()
-        search_results = google_search(query)
+    def handle_google_action(data):
+        search_results = google_search(data)
         results = json.dumps(search_results, indent=2)
-        action_history.append({"action": "GOOGLE", "query": query, "results": results})
-        logger.info(f"Google search performed for query: {query}")
+        logger.info(f"Google search performed for query: {data}")
+        return results
 
-    def handle_loadurl_action(response):
-        url = response[9:].strip()
-        webpage_content = load_webpage(url)
-        action_history.append({"action": "LOADURL", "url": url, "content": webpage_content})
-        logger.info(f"Webpage loaded: {url}")
+    def handle_loadurl_action(data):
+        webpage_content = load_webpage(data)
+        logger.info(f"Webpage loaded: {data}")
+        return webpage_content
 
-    def handle_finalize_action(response):
-        nonlocal ai_notes
-        ai_notes = response[10:].strip()
+    def handle_finalize_action(data):
         logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
         return True  # Signal to break the loop
 
-    def handle_note_action(response):
-        note = response[6:].strip()
-        logger.info(f"AI Note: {note}")
-        action_history.append({"action": "NOTE", "content": note})
+    def handle_note_action(data):
+        logger.info(f"AI Note: {data}")
+        return None  # Notes don't produce results
 
     action_handlers = {
-        '[DOCKERFILE]': handle_dockerfile_action,
-        '[RUN]': handle_run_action,
-        '[SEARCH]': handle_search_action,
-        '[GOOGLE]': handle_google_action,
-        '[LOADURL]': handle_loadurl_action,
-        '[FINALIZE]': handle_finalize_action,
-        '[NOTE]': handle_note_action
+        'dockerfile': handle_dockerfile_action,
+        'run': handle_run_action,
+        'search': handle_search_action,
+        'google': handle_google_action,
+        'loadurl': handle_loadurl_action,
+        'finalize': handle_finalize_action,
+        'note': handle_note_action
     }
 
     ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
@@ -761,37 +751,56 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         
         logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
         
-        # Split the AI response into individual actions
-        ai_actions = [action.strip() for action in ai_response.split('\n') if action.strip()]
-        
-        for action in ai_actions:
-            if action.startswith("Error:"):
-                logger.error(f"AI response error: {action}")
-                print(f"Error in AI response: {action}")
-                error_count += 1
-                if error_count >= max_errors:
-                    logger.error(f"Stopping experiment after {max_errors} consecutive errors")
-                    return action_history, results, ai_notes, current_dockerfile
-                continue
+        try:
+            response_json = json.loads(ai_response)
+            if not isinstance(response_json, dict) or 'actions' not in response_json:
+                raise ValueError("Invalid JSON structure")
             
-            try:
-                action_type = action.split()[0]
+            for action in response_json['actions']:
+                action_type = action.get('action')
+                action_data = action.get('data', '')
+                action_notes = action.get('notes', '')
+                
                 if action_type in action_handlers:
-                    if action_handlers[action_type](action):
-                        return action_history, results, ai_notes, current_dockerfile  # Exit if [FINALIZE] is handled
+                    result = action_handlers[action_type](action_data)
+                    if result is True:  # Finalize action
+                        final_notes = action_notes + "\n" + action_data
+                        return action_history, results, final_notes, current_dockerfile
+                    elif result:
+                        results = result
+                    action_history.append({
+                        "action": action_type,
+                        "data": action_data,
+                        "notes": action_notes,
+                        "results": results
+                    })
                 else:
-                    results = f"Unknown action in AI response: {action[:100]}..."
+                    results = f"Unknown action in AI response: {action_type}"
                     logger.warning(results)
-                    action_history.append({"action": "UNKNOWN", "response": action, "results": results})
-            except Exception as action_error:
-                logger.error(f"Error processing action {action_count}: {str(action_error)}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                action_history.append({"action": "ERROR", "error": str(action_error)})
+                    action_history.append({
+                        "action": "UNKNOWN",
+                        "data": action_data,
+                        "notes": action_notes,
+                        "results": results
+                    })
+        
+        except json.JSONDecodeError as json_error:
+            logger.error(f"Error decoding JSON response: {str(json_error)}")
+            error_count += 1
+        except Exception as action_error:
+            logger.error(f"Error processing action {action_count}: {str(action_error)}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            action_history.append({"action": "ERROR", "error": str(action_error)})
+            error_count += 1
+
+        if error_count >= max_errors:
+            logger.error(f"Stopping experiment after {max_errors} consecutive errors")
+            break
 
         error_count = 0  # Reset error count after successful processing of all actions
 
     # If we've reached this point, we've hit the max actions limit or time limit
-    if not ai_notes:
+    if not final_notes:
         logger.warning(f"Experiment {experiment_id} ended without explicit finalization.")
         final_prompt = f"""
         Experiment #{experiment_id} has ended without explicit finalization.
@@ -807,16 +816,29 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         {current_dockerfile}
         
         Based on these actions, results, and the current Dockerfile, please provide final notes for the next AI to continue from this point.
-        Your response MUST start with [FINALIZE] followed by your notes.
+        Your response MUST be a JSON object with a single "finalize" action, like this:
+        {{
+            "actions": [
+                {{
+                    "action": "finalize",
+                    "data": "",
+                    "notes": "Your final notes here..."
+                }}
+            ]
+        }}
         """
         final_response = get_ai_response(final_prompt, api_key)
         logger.info(f"Final AI response:\n{final_response}")  # Log the full final response
-        if final_response.startswith('[FINALIZE]'):
-            ai_notes = final_response[10:].strip()
-        else:
-            ai_notes = "AI failed to provide final notes after experiment ended."
+        try:
+            final_json = json.loads(final_response)
+            if 'actions' in final_json and final_json['actions'][0]['action'] == 'finalize':
+                final_notes = final_json['actions'][0]['notes'] + "\n" + final_json['actions'][0]['data']
+            else:
+                final_notes = "AI failed to provide final notes in the correct format after experiment ended."
+        except json.JSONDecodeError:
+            final_notes = "AI failed to provide final notes in valid JSON format after experiment ended."
 
-    return action_history, results, ai_notes, current_dockerfile
+    return action_history, results, final_notes, current_dockerfile
 
 def run_experiment_cycle(docker_client):
     free_space = check_disk_space()
@@ -855,11 +877,11 @@ def run_experiment_cycle(docker_client):
         
         prev_data = get_previous_experiment_data(experiment_id)
         
-        action_history, results, ai_notes, dockerfile = run_ai_interaction_loop(
+        action_history, results, final_notes, dockerfile = run_ai_interaction_loop(
             experiment_id, prev_data, exp_dir, repo, access, docker_client)
 
-        save_experiment_results(experiment_id, action_history, results, ai_notes, dockerfile)
-        log_path = save_experiment_log(exp_dir, experiment_id, action_history, results, ai_notes, dockerfile)
+        save_experiment_results(experiment_id, action_history, results, final_notes, dockerfile)
+        log_path = save_experiment_log(exp_dir, experiment_id, action_history, results, dockerfile)
         commit_to_git(repo, f"Experiment {experiment_id}: Save experiment log", [log_path])
         
     except Exception as e:

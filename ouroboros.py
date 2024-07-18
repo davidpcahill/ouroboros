@@ -618,6 +618,8 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     current_dockerfile = "FROM python:3.9-slim\nWORKDIR /app\n"
     results = ""
     final_notes = ""
+    current_image = None
+    current_container = None
 
     max_actions = int(config.get('Experiment', 'MaxActions', fallback='10'))
     time_limit = float(config.get('Experiment', 'TimeLimit', fallback='3600'))
@@ -636,7 +638,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
             return None
 
     def handle_dockerfile_action(data):
-        nonlocal current_dockerfile
+        nonlocal current_dockerfile, current_image, current_container
         dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
         os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
         with open(dockerfile_path, 'w') as f:
@@ -645,37 +647,92 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
             commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
             logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
             
-            # Test the new Dockerfile
-            logger.info("Testing new Dockerfile...")
-            test_result = run_in_docker(docker_client, data, "print('Dockerfile test successful')", exp_dir)
-            logger.info(f"Dockerfile test result: {test_result}")
-            
-            if "Dockerfile test successful" not in test_result:
-                logger.error("Dockerfile test failed. Reverting to previous Dockerfile.")
-                return False
-            current_dockerfile = data
-            return test_result
+            # Clean up previous container and image if they exist
+            if current_container:
+                current_container.remove(force=True)
+                current_container = None
+            if current_image:
+                docker_client.images.remove(current_image.id, force=True)
+                current_image = None
+
+            # Build new image
+            logger.info("Building new Docker image...")
+            try:
+                current_image, _ = docker_client.images.build(
+                    path=exp_dir,
+                    dockerfile='Dockerfile',
+                    rm=True
+                )
+                logger.info(f"New Docker image built successfully: {current_image.id}")
+
+                # Create new container
+                logger.info("Creating new Docker container...")
+                current_container = docker_client.containers.create(
+                    current_image.id,
+                    command="tail -f /dev/null",  # Keep container running
+                    volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'ro'}},
+                    mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
+                    cpu_period=100000,
+                    cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
+                    network_mode='none'
+                )
+                logger.info(f"New Docker container created: {current_container.id}")
+
+                # Start the container
+                current_container.start()
+                logger.info("New Docker container started successfully")
+
+                current_dockerfile = data
+                return "Dockerfile updated and new container is ready for code execution."
+            except docker.errors.BuildError as e:
+                logger.error(f"Docker build error: {str(e)}")
+                return f"Error building Docker image: {str(e)}"
+            except docker.errors.APIError as e:
+                logger.error(f"Docker API error: {str(e)}")
+                return f"Error in Docker operation: {str(e)}"
         else:
             logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
-            return False
+            return "Failed to create Dockerfile"
 
     def handle_run_action(data):
         nonlocal results
+        if not current_container:
+            return "No Docker container available. Please update the Dockerfile first."
+
         code_path = os.path.join(exp_dir, 'experiment.py')
         os.makedirs(os.path.dirname(code_path), exist_ok=True)
         with open(code_path, 'w') as f:
             f.write(data)
-        results = run_in_docker(docker_client, current_dockerfile, data, exp_dir)
+
+        # Copy the code to the container
+        with open(code_path, 'rb') as f:
+            current_container.put_archive("/app", f.read())
+
+        # Execute the code
+        exit_code, output = current_container.exec_run(
+            cmd=["python", "/app/experiment.py"],
+            demux=True
+        )
+
+        results = output[0].decode() if output[0] else ""
+        error_output = output[1].decode() if output[1] else ""
+
+        if error_output:
+            logger.warning(f"Error output from code execution: {error_output}")
+            results += f"\nError output:\n{error_output}"
+
         results_path = os.path.join(exp_dir, 'results.txt')
         os.makedirs(os.path.dirname(results_path), exist_ok=True)
         with open(results_path, 'w') as f:
             f.write(results)
+
         commit_to_git(repo, f"Experiment {experiment_id}: Run code", [code_path, results_path])
         logger.info(f"Code executed for experiment {experiment_id}")
         logger.info(f"{'='*50}")
         logger.info(f"Docker execution results for experiment {experiment_id}:")
         logger.info(results)
         logger.info(f"{'='*50}")
+
         return results
 
     def handle_search_action(data):
@@ -716,6 +773,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     test_result = run_in_docker(docker_client, current_dockerfile, "print('Initial Dockerfile test successful')", exp_dir)
     logger.info(f"Initial Dockerfile test result: {test_result}")
 
+    # Main AI interaction loop
     for action_count in range(1, max_actions + 1):
         time_elapsed = time.time() - start_time
         time_remaining = max(0, time_limit - time_elapsed)
@@ -792,6 +850,12 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
             break
 
         error_count = 0  # Reset error count after successful processing of all actions
+
+    # Clean up Docker resources at the end of the experiment
+    if current_container:
+        current_container.remove(force=True)
+    if current_image:
+        docker_client.images.remove(current_image.id, force=True)
 
     # If we've reached this point without finalizing, add a final note
     if not final_notes:

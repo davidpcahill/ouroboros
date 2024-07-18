@@ -260,31 +260,6 @@ Access Credentials:
 
 You can use these variables to provide context to the AI about the current state of the experiment and its environment.
 
-## Contribute
-
-Ouroboros has a goal of helping make significant steps towards autonomous AI research and development. We welcome contributions, suggestions, and discussions on improving and expanding Ouroboros' capabilities.
-
-## License
-
-Ouroboros is licensed under the Ouroboros Public License, Version 1.0 (the "License"); you may not use this software except in compliance with the License. You may use, distribute, and modify the software under the terms of the License, but you are not permitted to sell or repurpose the software for commercial distribution without explicit permission.
-
-### Terms and Conditions
-
-1. **Permission is granted to use, copy, modify, and distribute this software for any purpose, with or without fee, subject to the following conditions:**
-   - The original author must be credited.
-   - Redistributions in source or binary forms must include the original license and terms.
-   - You may not sell or repurpose the software for commercial distribution.
-
-2. **Disclaimer:**
-   - The software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement.
-   - In no event shall the authors be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
-
-For more details, see the [LICENSE.md](LICENSE.md) file.
-
-## Disclaimer
-
-This system has significant capabilities and potential risks. Always run it in a controlled environment, monitor its activities closely, and be prepared to intervene if necessary. Regularly review the AI's actions and outputs to ensure it's operating within expected parameters and ethical guidelines.
-
 ## Example Output
 
 ```
@@ -466,3 +441,28 @@ Estimated action values: [ 0.33149868  0.23115508 -0.23789625  0.09697234  0.250
 Running experiments: 1cycles [03:00, 180.87s/cycles]
 2024-07-18 00:24:36,955 - INFO - Ouroboros system stopped by user.
 ```
+
+## Contribute
+
+Ouroboros has a goal of helping make significant steps towards autonomous AI research and development. We welcome contributions, suggestions, and discussions on improving and expanding Ouroboros' capabilities.
+
+## License
+
+Ouroboros is licensed under the Ouroboros Public License, Version 1.0 (the "License"); you may not use this software except in compliance with the License. You may use, distribute, and modify the software under the terms of the License, but you are not permitted to sell or repurpose the software for commercial distribution without explicit permission.
+
+### Terms and Conditions
+
+1. **Permission is granted to use, copy, modify, and distribute this software for any purpose, with or without fee, subject to the following conditions:**
+   - The original author must be credited.
+   - Redistributions in source or binary forms must include the original license and terms.
+   - You may not sell or repurpose the software for commercial distribution.
+
+2. **Disclaimer:**
+   - The software is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement.
+   - In no event shall the authors be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
+
+For more details, see the [LICENSE.md](LICENSE.md) file.
+
+## Disclaimer
+
+This system has significant capabilities and potential risks. Always run it in a controlled environment, monitor its activities closely, and be prepared to intervene if necessary. Regularly review the AI's actions and outputs to ensure it's operating within expected parameters and ethical guidelines.

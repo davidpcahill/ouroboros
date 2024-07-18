@@ -435,6 +435,15 @@ def get_openai_response(prompt, api_key):
 
 def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, current_action, max_actions, time_remaining, access_info):
     network_access = config.getboolean('Docker', 'NetworkAccess', fallback=False)
+    
+    # Log detailed information about the context
+    logger.info(f"Preparing AI prompt for Experiment {experiment_id}")
+    logger.info(f"Current action: {current_action}/{max_actions}")
+    logger.info(f"Time remaining: {time_remaining:.2f} seconds")
+    logger.info(f"Network access: {'Enabled' if network_access else 'Disabled'}")
+    logger.info(f"Action history: {', '.join([f'{action['action']} ({action['notes'][:30]}...)' for action in action_history])}")
+    logger.info(f"Current Dockerfile:\n{current_dockerfile}")
+
     prompt = f"""
     Experiment #{experiment_id}
 
@@ -455,19 +464,14 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     {current_dockerfile}
 
     IMPORTANT INSTRUCTIONS:
-    1. **JSON Format:** All responses must be in valid JSON format. Do not include anything outside the JSON object.
-    2. **Docker Environment:**
-       - You are working with a persistent Docker container throughout the experiment.
-       - Modify the Dockerfile using the "dockerfile" action. This will create a new container with the updated environment.
-       - The main experiment code will be copied as 'experiment.py' automatically.
-       - Use ENV in the Dockerfile for necessary environment variables.
-    3. **Code Execution:** Use the "run" action to execute Python code in the Docker environment. The code will run in the current container.
-    4. **Network Access:** No external URLs or APIs if disabled; "google" and "loadurl" actions depend on operator enablement.
-    5. **API Keys and Credentials:** Use them cautiously and only if required for the experiment.
-    {json.dumps(access_info, indent=2)}
+    1. Prioritize running code over updating the Dockerfile. Only update the Dockerfile when absolutely necessary for your experiments.
+    2. Aim to write and execute Python code that advances AI research or demonstrates novel concepts.
+    3. Use the "run" action to execute your Python code in the Docker environment.
+    4. Only use the "dockerfile" action if you need a new library or environment setup that's crucial for your next experiment.
+    5. Remember that each experiment should build upon the previous ones, aiming for continuous improvement and innovation.
     6. **Experiment Lifecycle:**
        - Each experiment runs in isolation with a maximum of {max_actions} actions.
-       - Use "finalize" on the last action or if you achieve your goals early.
+       - Use "finalize" on or before the last action.
 
     **EXPERIMENTATION GUIDELINES:**
     - Be creative and ambitious. Start simple if it's your first experiment.
@@ -492,7 +496,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     }}
 
     What would you like to do next? Be bold, creative, and aim for breakthroughs!
-    """
+    """  
     return prompt
 
 # Action functions
@@ -565,6 +569,124 @@ def save_experiment_log(exp_dir, experiment_id, action_history, results, final_n
     logger.info(f"Experiment log saved to {log_path}")
     return log_path
 
+def extract_json(text):
+    """Extract JSON object from text."""
+    try:
+        start = text.index('{')
+        end = text.rindex('}') + 1
+        json_str = text[start:end]
+        return json.loads(json_str)
+    except ValueError:
+        return None
+
+def handle_dockerfile_action(data):
+    nonlocal current_dockerfile, current_image, current_container
+    dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
+    os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
+    with open(dockerfile_path, 'w') as f:
+        f.write(data)
+    if os.path.exists(dockerfile_path):
+        commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
+        logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
+        
+        # Clean up previous container and image if they exist
+        if current_container:
+            current_container.remove(force=True)
+            current_container = None
+        if current_image:
+            docker_client.images.remove(current_image.id, force=True)
+            current_image = None
+
+        # Build new image
+        logger.info("Building new Docker image...")
+        try:
+            current_image, _ = docker_client.images.build(
+                path=exp_dir,
+                dockerfile='Dockerfile',
+                rm=True
+            )
+            logger.info(f"New Docker image built successfully: {current_image.id}")
+
+            # Create new container
+            logger.info("Creating new Docker container...")
+            current_container = docker_client.containers.create(
+                current_image.id,
+                command="tail -f /dev/null",  # Keep container running
+                volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},  # Changed 'ro' to 'rw'
+                mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
+                cpu_period=100000,
+                cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
+                network_mode='none'
+            )
+            logger.info(f"New Docker container created: {current_container.id}")
+
+            # Start the container
+            current_container.start()
+            logger.info("New Docker container started successfully")
+
+            current_dockerfile = data
+            return "Dockerfile updated and new container is ready for code execution."
+        except docker.errors.BuildError as e:
+            logger.error(f"Docker build error: {str(e)}")
+            return f"Error building Docker image: {str(e)}"
+        except docker.errors.APIError as e:
+            logger.error(f"Docker API error: {str(e)}")
+            return f"Error in Docker operation: {str(e)}"
+    else:
+        logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
+        return "Failed to create Dockerfile"
+
+def handle_run_action(data):
+    nonlocal results
+    if not current_container:
+        return "No Docker container available. Please update the Dockerfile first."
+
+    results = run_in_docker(docker_client, current_container, data, exp_dir)
+
+    results_path = os.path.join(exp_dir, 'results.txt')
+    os.makedirs(os.path.dirname(results_path), exist_ok=True)
+    with open(results_path, 'w') as f:
+        f.write(results)
+
+    commit_to_git(repo, f"Experiment {experiment_id}: Run code", [results_path])
+    logger.info(f"Code executed for experiment {experiment_id}")
+    logger.info(f"{'='*50}")
+    logger.info(f"Docker execution results for experiment {experiment_id}:")
+    logger.info(results)
+    logger.info(f"{'='*50}")
+
+    return results
+
+def handle_search_action(data):
+    search_results = search_previous_experiments(data)
+    results = json.dumps(search_results, indent=2)
+    logger.info(f"Search performed for query: {data}")
+    return results
+
+def handle_google_action(data):
+    search_results = google_search(data)
+    results = json.dumps(search_results, indent=2)
+    logger.info(f"Google search performed for query: {data}")
+    return results
+
+def handle_loadurl_action(data):
+    webpage_content = load_webpage(data)
+    logger.info(f"Webpage loaded: {data}")
+    return webpage_content
+
+def handle_finalize_action(data):
+    logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
+    return "FINALIZE"
+
+action_handlers = {
+    'dockerfile': handle_dockerfile_action,
+    'run': handle_run_action,
+    'search': handle_search_action,
+    'google': handle_google_action,
+    'loadurl': handle_loadurl_action,
+    'finalize': handle_finalize_action
+}
+
 # Main experiment cycle
 def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, docker_client):
     action_history = []
@@ -573,297 +695,228 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     final_notes = ""
     current_image = None
     current_container = None
-
     max_actions = int(config.get('Experiment', 'MaxActions', fallback='10'))
     time_limit = float(config.get('Experiment', 'TimeLimit', fallback='3600'))
     start_time = time.time()
     error_count = 0
     max_errors = int(config.get('Experiment', 'MaxErrors', fallback='3'))
 
-    def extract_json(text):
-        """Extract JSON object from text."""
+    # Create a detailed log file for the experiment
+    experiment_log_path = os.path.join(exp_dir, f'experiment_{experiment_id}_detailed_log.txt')
+    with open(experiment_log_path, 'w') as log_file:
+        log_file.write(f"Detailed log for Experiment {experiment_id}\n")
+        log_file.write("=" * 50 + "\n\n")
+
+        ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
+        api_key = access['ANTHROPIC_API_KEY'] if ai_provider == 'claude' else access['OPENAI_API_KEY']
+
+        # Test initial Dockerfile
+        logger.info("Testing initial Dockerfile...")
+
+        initial_container = None
         try:
-            start = text.index('{')
-            end = text.rindex('}') + 1
-            json_str = text[start:end]
-            return json.loads(json_str)
-        except ValueError:
-            return None
+            # Create initial container
+            logger.info("Creating initial Docker container...")
+            initial_container = docker_client.containers.create(
+                "python:3.9-slim",
+                command="tail -f /dev/null",  # Keep container running
+                volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},
+                mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
+                cpu_period=100000,
+                cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
+                network_mode='none'
+            )
+            logger.info(f"Initial Docker container created: {initial_container.id}")
 
-    def handle_dockerfile_action(data):
-        nonlocal current_dockerfile, current_image, current_container
-        dockerfile_path = os.path.join(exp_dir, 'Dockerfile')
-        os.makedirs(os.path.dirname(dockerfile_path), exist_ok=True)
-        with open(dockerfile_path, 'w') as f:
-            f.write(data)
-        if os.path.exists(dockerfile_path):
-            commit_to_git(repo, f"Experiment {experiment_id}: Update Dockerfile", [dockerfile_path])
-            logger.info(f"Dockerfile updated and committed for experiment {experiment_id}")
+            # Start the container
+            initial_container.start()
+            logger.info("Initial Docker container started successfully")
+
+            # Run the test
+            test_code = "print('Initial Dockerfile test successful')"
+            test_result = run_in_docker(docker_client, initial_container, test_code, exp_dir)
+            logger.info(f"Initial Dockerfile test result: {test_result}")
+
+        except docker.errors.APIError as e:
+            logger.error(f"Failed to create or start initial Docker container: {str(e)}")
+            test_result = f"Error: {str(e)}"
+        except Exception as e:
+            logger.error(f"Unexpected error during initial Docker container setup: {str(e)}")
+            test_result = f"Unexpected error: {str(e)}"
+        finally:
+            # Clean up initial container
+            if initial_container:
+                logger.info("Cleaning up initial Docker container...")
+                try:
+                    initial_container.stop()
+                    initial_container.remove()
+                    logger.info("Initial Docker container removed")
+                except Exception as e:
+                    logger.error(f"Error cleaning up initial Docker container: {str(e)}")
+
+        # Main AI interaction loop
+        for action_count in range(1, max_actions + 1):
+            time_elapsed = time.time() - start_time
+            time_remaining = max(0, time_limit - time_elapsed)
+            time.sleep(1)  # Added delay between actions
+
+            print_status_update(experiment_id, action_count, max_actions, time_remaining)
+
+            if time_remaining <= 0:
+                logger.warning(f"Experiment {experiment_id} reached time limit.")
+                break
+
+            ai_prompt = get_ai_prompt(
+                experiment_id, prev_data, action_history, current_dockerfile, 
+                action_count, max_actions, time_remaining, access
+            )
             
-            # Clean up previous container and image if they exist
-            if current_container:
-                current_container.remove(force=True)
-                current_container = None
-            if current_image:
-                docker_client.images.remove(current_image.id, force=True)
-                current_image = None
+            # Log the prompt sent to AI
+            log_file.write(f"Action {action_count}: Prompt sent to AI\n")
+            log_file.write("-" * 40 + "\n")
+            log_file.write(ai_prompt + "\n\n")
 
-            # Build new image
-            logger.info("Building new Docker image...")
+            logger.info(f"Sending request to AI - Action {action_count}/{max_actions}")
+            ai_response = get_ai_response(ai_prompt, api_key)
+
+            # Log the AI's response
+            log_file.write(f"AI Response for Action {action_count}\n")
+            log_file.write("-" * 40 + "\n")
+            log_file.write(ai_response + "\n\n")
+            
+            logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
+            
             try:
-                current_image, _ = docker_client.images.build(
-                    path=exp_dir,
-                    dockerfile='Dockerfile',
-                    rm=True
-                )
-                logger.info(f"New Docker image built successfully: {current_image.id}")
+                response_json = extract_json(ai_response)
+                if response_json is None:
+                    raise ValueError("No valid JSON found in the response")
 
-                # Create new container
-                logger.info("Creating new Docker container...")
-                current_container = docker_client.containers.create(
-                    current_image.id,
-                    command="tail -f /dev/null",  # Keep container running
-                    volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},  # Changed 'ro' to 'rw'
-                    mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
-                    cpu_period=100000,
-                    cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
-                    network_mode='none'
-                )
-                logger.info(f"New Docker container created: {current_container.id}")
+                if not all(key in response_json for key in ['action', 'data', 'notes']):
+                    raise ValueError("Invalid JSON structure: missing required fields")
+                
+                action_type = response_json['action']
+                action_data = response_json['data']
+                action_notes = response_json['notes']
+                
+                if action_type in action_handlers:
+                    result = action_handlers[action_type](action_data)
+                    
+                    # Log the action result
+                    log_file.write(f"Result of Action {action_count} ({action_type})\n")
+                    log_file.write("-" * 40 + "\n")
+                    log_file.write(str(result) + "\n\n")
 
-                # Start the container
-                current_container.start()
-                logger.info("New Docker container started successfully")
-
-                current_dockerfile = data
-                return "Dockerfile updated and new container is ready for code execution."
-            except docker.errors.BuildError as e:
-                logger.error(f"Docker build error: {str(e)}")
-                return f"Error building Docker image: {str(e)}"
-            except docker.errors.APIError as e:
-                logger.error(f"Docker API error: {str(e)}")
-                return f"Error in Docker operation: {str(e)}"
-        else:
-            logger.error(f"Failed to create Dockerfile at {dockerfile_path}")
-            return "Failed to create Dockerfile"
-
-    def handle_run_action(data):
-        nonlocal results
-        if not current_container:
-            return "No Docker container available. Please update the Dockerfile first."
-
-        results = run_in_docker(docker_client, current_container, data, exp_dir)
-
-        results_path = os.path.join(exp_dir, 'results.txt')
-        os.makedirs(os.path.dirname(results_path), exist_ok=True)
-        with open(results_path, 'w') as f:
-            f.write(results)
-
-        commit_to_git(repo, f"Experiment {experiment_id}: Run code", [results_path])
-        logger.info(f"Code executed for experiment {experiment_id}")
-        logger.info(f"{'='*50}")
-        logger.info(f"Docker execution results for experiment {experiment_id}:")
-        logger.info(results)
-        logger.info(f"{'='*50}")
-
-        return results
-
-    def handle_search_action(data):
-        search_results = search_previous_experiments(data)
-        results = json.dumps(search_results, indent=2)
-        logger.info(f"Search performed for query: {data}")
-        return results
-
-    def handle_google_action(data):
-        search_results = google_search(data)
-        results = json.dumps(search_results, indent=2)
-        logger.info(f"Google search performed for query: {data}")
-        return results
-
-    def handle_loadurl_action(data):
-        webpage_content = load_webpage(data)
-        logger.info(f"Webpage loaded: {data}")
-        return webpage_content
-
-    def handle_finalize_action(data):
-        logger.info(f"Experiment {experiment_id} finalized. Waiting for next cycle...")
-        return "FINALIZE"
-
-    action_handlers = {
-        'dockerfile': handle_dockerfile_action,
-        'run': handle_run_action,
-        'search': handle_search_action,
-        'google': handle_google_action,
-        'loadurl': handle_loadurl_action,
-        'finalize': handle_finalize_action
-    }
-
-    ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
-    api_key = access['ANTHROPIC_API_KEY'] if ai_provider == 'claude' else access['OPENAI_API_KEY']
-
-    # Test initial Dockerfile
-    logger.info("Testing initial Dockerfile...")
-
-    initial_container = None
-    try:
-        # Create initial container
-        logger.info("Creating initial Docker container...")
-        initial_container = docker_client.containers.create(
-            "python:3.9-slim",
-            command="tail -f /dev/null",  # Keep container running
-            volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},
-            mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
-            cpu_period=100000,
-            cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
-            network_mode='none'
-        )
-        logger.info(f"Initial Docker container created: {initial_container.id}")
-
-        # Start the container
-        initial_container.start()
-        logger.info("Initial Docker container started successfully")
-
-        # Run the test
-        test_code = "print('Initial Dockerfile test successful')"
-        test_result = run_in_docker(docker_client, initial_container, test_code, exp_dir)
-        logger.info(f"Initial Dockerfile test result: {test_result}")
-
-    except docker.errors.APIError as e:
-        logger.error(f"Failed to create or start initial Docker container: {str(e)}")
-        test_result = f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Unexpected error during initial Docker container setup: {str(e)}")
-        test_result = f"Unexpected error: {str(e)}"
-    finally:
-        # Clean up initial container
-        if initial_container:
-            logger.info("Cleaning up initial Docker container...")
-            try:
-                initial_container.stop()
-                initial_container.remove()
-                logger.info("Initial Docker container removed")
-            except Exception as e:
-                logger.error(f"Error cleaning up initial Docker container: {str(e)}")
-
-    # Main AI interaction loop
-    for action_count in range(1, max_actions + 1):
-        time_elapsed = time.time() - start_time
-        time_remaining = max(0, time_limit - time_elapsed)
-        time.sleep(1)  # Added delay between actions
-
-        print_status_update(experiment_id, action_count, max_actions, time_remaining)
-
-        if time_remaining <= 0:
-            logger.warning(f"Experiment {experiment_id} reached time limit.")
-            break
-
-        ai_response = get_ai_response(get_ai_prompt(
-            experiment_id, prev_data, action_history, current_dockerfile, 
-            action_count, max_actions, time_remaining, access
-        ), api_key)
-        
-        logger.info(f"Full AI response:\n{ai_response}")  # Log the full response
-        
-        try:
-            response_json = extract_json(ai_response)
-            if response_json is None:
-                raise ValueError("No valid JSON found in the response")
-
-            if not all(key in response_json for key in ['action', 'data', 'notes']):
-                raise ValueError("Invalid JSON structure: missing required fields")
-            
-            action_type = response_json['action']
-            action_data = response_json['data']
-            action_notes = response_json['notes']
-            
-            if action_type in action_handlers:
-                result = action_handlers[action_type](action_data)
-                if result == "FINALIZE":  # Finalize action
-                    final_notes = action_notes + "\n" + action_data
+                    if result == "FINALIZE":  # Finalize action
+                        final_notes = action_notes + "\n" + action_data
+                        action_history.append({
+                            "action": action_type,
+                            "data": action_data,
+                            "notes": action_notes,
+                            "results": "Experiment finalized"
+                        })
+                        break
+                    elif result:
+                        results = result
                     action_history.append({
                         "action": action_type,
                         "data": action_data,
                         "notes": action_notes,
-                        "results": "Experiment finalized"
+                        "results": results
                     })
-                    break
-                elif result:
-                    results = result
-                action_history.append({
-                    "action": action_type,
-                    "data": action_data,
-                    "notes": action_notes,
-                    "results": results
-                })
-            else:
-                results = f"Unknown action in AI response: {action_type}"
-                logger.warning(results)
-                action_history.append({
-                    "action": "UNKNOWN",
-                    "data": action_data,
-                    "notes": action_notes,
-                    "results": results
-                })
+                else:
+                    results = f"Unknown action in AI response: {action_type}"
+                    logger.warning(results)
+                    action_history.append({
+                        "action": "UNKNOWN",
+                        "data": action_data,
+                        "notes": action_notes,
+                        "results": results
+                    })
+                    
+                    # Log unknown action
+                    log_file.write(f"Unknown Action {action_count}\n")
+                    log_file.write("-" * 40 + "\n")
+                    log_file.write(results + "\n\n")
+            
+            except json.JSONDecodeError as json_error:
+                error_msg = f"Error decoding JSON response: {str(json_error)}"
+                logger.error(error_msg)
+                log_file.write(f"Error in Action {action_count}\n")
+                log_file.write("-" * 40 + "\n")
+                log_file.write(error_msg + "\n\n")
+                error_count += 1
+            except ValueError as value_error:
+                error_msg = f"Error processing AI response: {str(value_error)}"
+                logger.error(error_msg)
+                log_file.write(f"Error in Action {action_count}\n")
+                log_file.write("-" * 40 + "\n")
+                log_file.write(error_msg + "\n\n")
+                error_count += 1
+            except Exception as action_error:
+                error_msg = f"Error processing action {action_count}: {str(action_error)}"
+                logger.error(error_msg)
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                log_file.write(f"Error in Action {action_count}\n")
+                log_file.write("-" * 40 + "\n")
+                log_file.write(error_msg + "\n")
+                log_file.write(f"Traceback: {traceback.format_exc()}\n\n")
+                action_history.append({"action": "ERROR", "error": str(action_error)})
+                error_count += 1
+
+            if error_count >= max_errors:
+                logger.error(f"Stopping experiment after {max_errors} consecutive errors")
+                log_file.write(f"Experiment stopped after {max_errors} consecutive errors\n")
+                break
+
+            error_count = 0  # Reset error count after successful processing of all actions
+
+        # Clean up Docker resources at the end of the experiment
+        if current_container:
+            current_container.remove(force=True)
+        if current_image:
+            docker_client.images.remove(current_image.id, force=True)
+
+        # If we've reached this point without finalizing, add a final note
+        if not final_notes:
+            final_notes = f"Experiment ended after {len(action_history)} actions without explicit finalization."
         
-        except json.JSONDecodeError as json_error:
-            logger.error(f"Error decoding JSON response: {str(json_error)}")
-            error_count += 1
-        except ValueError as value_error:
-            logger.error(f"Error processing AI response: {str(value_error)}")
-            error_count += 1
-        except Exception as action_error:
-            logger.error(f"Error processing action {action_count}: {str(action_error)}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            action_history.append({"action": "ERROR", "error": str(action_error)})
-            error_count += 1
+        # Log final notes
+        log_file.write("Final Notes\n")
+        log_file.write("-" * 40 + "\n")
+        log_file.write(final_notes + "\n")
 
-        if error_count >= max_errors:
-            logger.error(f"Stopping experiment after {max_errors} consecutive errors")
-            break
-
-        error_count = 0  # Reset error count after successful processing of all actions
-
-    # Clean up Docker resources at the end of the experiment
-    if current_container:
-        current_container.remove(force=True)
-    if current_image:
-        docker_client.images.remove(current_image.id, force=True)
-
-    # If we've reached this point without finalizing, add a final note
-    if not final_notes:
-        final_notes = f"Experiment ended after {len(action_history)} actions without explicit finalization."
-
+    logger.info(f"Detailed experiment log saved to {experiment_log_path}")
     return action_history, results, final_notes, current_dockerfile
 
 def run_experiment_cycle(docker_client):
-    free_space = check_disk_space()
-    min_space_gb = config.getint('Docker', 'MinimumDiskSpaceGB', fallback=10)
-    if free_space < min_space_gb:
-        logger.error(f"Not enough disk space to run experiment. Available: {free_space}GB, Required: {min_space_gb}GB. Aborting.")
-        return
-
-    log_docker_resource_usage()
-    cleanup_docker_resources()
-    log_docker_resource_usage()
-
-    logger.info("Starting new experiment cycle")
-    access = read_access()
-    experiment_id = get_last_experiment_id() + 1
-    logger.info(f"Experiment ID: {experiment_id}")
-    
-    ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
-    if ai_provider == 'claude':
-        temperature = config.get('Anthropic', 'TEMPERATURE', fallback='0.7')
-    else:
-        temperature = config.get('OpenAI', 'TEMPERATURE', fallback='0.7')
-    logger.info(f"Current AI temperature setting: {temperature}")
-    
-    repo, repo_dir = init_git_repo()
-    if repo is None or repo_dir is None:
-        logger.error("Failed to initialize Git repository. Exiting experiment cycle.")
-        return
-
     try:
+        free_space = check_disk_space()
+        min_space_gb = config.getint('Docker', 'MinimumDiskSpaceGB', fallback=10)
+        if free_space < min_space_gb:
+            logger.error(f"Not enough disk space to run experiment. Available: {free_space}GB, Required: {min_space_gb}GB. Aborting.")
+            return
+
+        log_docker_resource_usage()
+        cleanup_docker_resources()
+        log_docker_resource_usage()
+
+        logger.info("Starting new experiment cycle")
+        access = read_access()
+        experiment_id = get_last_experiment_id() + 1
+        logger.info(f"Experiment ID: {experiment_id}")
+        
+        ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
+        if ai_provider == 'claude':
+            temperature = config.get('Anthropic', 'TEMPERATURE', fallback='0.7')
+        else:
+            temperature = config.get('OpenAI', 'TEMPERATURE', fallback='0.7')
+        logger.info(f"Current AI temperature setting: {temperature}")
+        
+        repo, repo_dir = init_git_repo()
+        if repo is None or repo_dir is None:
+            logger.error("Failed to initialize Git repository. Exiting experiment cycle.")
+            return
+
         exp_dir = setup_experiment(experiment_id, repo_dir)
         
         if not os.path.exists(exp_dir):
@@ -889,6 +942,8 @@ def run_experiment_cycle(docker_client):
     except Exception as e:
         logger.error(f"Error in experiment cycle: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
+    finally:
+        logger.info(f"Experiment cycle {experiment_id} finished")
 
 
 # Main function

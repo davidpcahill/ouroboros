@@ -211,6 +211,43 @@ You can adjust the following parameter sections in the `config.ini` file:
 - `experiments/`: Directory containing individual experiment files and Git repository
 - `ouroboros.log`: Log file for system events and errors
 
+## AI Prompt Variables
+
+When customizing the AI prompt in the `config.ini` file, you can use the following variables. These will be automatically replaced with the current experiment data:
+
+- `{experiment_id}`: The unique identifier for the current experiment.
+- `{current_action}`: The number of the current action in the experiment.
+- `{max_actions}`: The maximum number of actions allowed for the experiment.
+- `{time_remaining}`: The remaining time for the experiment in seconds.
+- `{network_access}`: Indicates whether network access is enabled ("Enabled" or "Disabled").
+- `{gpu_access}`: Indicates whether GPU access is enabled ("Enabled" or "Disabled").
+- `{prev_data}`: Data from the previous experiment, if available.
+- `{action_history}`: A JSON-formatted string containing the history of actions taken in the current experiment.
+- `{current_dockerfile}`: The current content of the Dockerfile.
+
+Example usage in the prompt:
+
+```
+Experiment #{experiment_id}
+
+Current Status:
+- Action: {current_action} of {max_actions}
+- Time remaining: {time_remaining:.2f} seconds
+- Network access: {network_access}
+- GPU access: {gpu_access}
+
+Previous experiment data:
+{prev_data}
+
+Current experiment action history:
+{action_history}
+
+Current Dockerfile:
+{current_dockerfile}
+```
+
+You can use these variables to provide context to the AI about the current state of the experiment and its environment.
+
 ## Usage
 
 Run the Ouroboros system:

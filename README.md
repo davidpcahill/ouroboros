@@ -237,11 +237,11 @@ Current Status:
 - Network access: {network_access}
 - GPU access: {gpu_access}
 
-Previous experiment data:
-{prev_data}
-
 Current experiment action history:
 {action_history}
+
+Previous experiment data:
+{prev_data}
 
 Current Dockerfile:
 {current_dockerfile}

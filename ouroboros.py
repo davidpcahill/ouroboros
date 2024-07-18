@@ -435,12 +435,14 @@ def get_openai_response(prompt, api_key):
 
 def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, current_action, max_actions, time_remaining, access_info):
     network_access = config.getboolean('Docker', 'NetworkAccess', fallback=False)
+    gpu_access = config.getboolean('Docker', 'GPUAccess', fallback=False)
     
     # Log detailed information about the context
     logger.info(f"Preparing AI prompt for Experiment {experiment_id}")
     logger.info(f"Current action: {current_action}/{max_actions}")
     logger.info(f"Time remaining: {time_remaining:.2f} seconds")
     logger.info(f"Network access: {'Enabled' if network_access else 'Disabled'}")
+    logger.info(f"GPU access: {'Enabled' if gpu_access else 'Disabled'}")
     logger.info(f"Action history: {', '.join([f'{action['action']} ({action['notes'][:30]}...)' for action in action_history])}")
     logger.info(f"Current Dockerfile:\n{current_dockerfile}")
 
@@ -453,6 +455,7 @@ def get_ai_prompt(experiment_id, prev_data, action_history, current_dockerfile, 
     - Action: {current_action} of {max_actions}
     - Time remaining: {time_remaining:.2f} seconds
     - Network access: {"Enabled" if network_access else "Disabled"}
+    - GPU access: {"Enabled" if gpu_access else "Disabled"}
 
     Previous experiment data:
     {json.dumps(prev_data, indent=2) if prev_data else 'No previous experiment'}
@@ -601,15 +604,21 @@ def dockerfile_action(data, exp_dir, repo, experiment_id, docker_client):
 
             # Create new container
             logger.info("Creating new Docker container...")
-            container = docker_client.containers.create(
-                image.id,
-                command="tail -f /dev/null",  # Keep container running
-                volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},
-                mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
-                cpu_period=100000,
-                cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
-                network_mode='none'
-            )
+            container_args = {
+                'image': image.id,
+                'command': "tail -f /dev/null",  # Keep container running
+                'volumes': {os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},
+                'mem_limit': config.get('Docker', 'MemoryLimit', fallback='512m'),
+                'cpu_period': 100000,
+                'cpu_quota': int(config.get('Docker', 'CPUQuota', fallback='50000')),
+                'network_mode': 'none'
+            }
+
+            # Add GPU access if enabled
+            if config.getboolean('Docker', 'GPUAccess', fallback=False):
+                container_args['device_requests'] = [docker.types.DeviceRequest(count=-1, capabilities=[['gpu']])]
+
+            container = docker_client.containers.create(**container_args)
             logger.info(f"New Docker container created: {container.id}")
 
             # Start the container
@@ -725,15 +734,21 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         try:
             # Create initial container
             logger.info("Creating initial Docker container...")
-            initial_container = docker_client.containers.create(
-                "python:3.9-slim",
-                command="tail -f /dev/null",  # Keep container running
-                volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},
-                mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
-                cpu_period=100000,
-                cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
-                network_mode='none'
-            )
+            container_args = {
+                'image': "python:3.9-slim",
+                'command': "tail -f /dev/null",  # Keep container running
+                'volumes': {os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},
+                'mem_limit': config.get('Docker', 'MemoryLimit', fallback='512m'),
+                'cpu_period': 100000,
+                'cpu_quota': int(config.get('Docker', 'CPUQuota', fallback='50000')),
+                'network_mode': 'none'
+            }
+
+            # Add GPU access if enabled
+            if config.getboolean('Docker', 'GPUAccess', fallback=False):
+                container_args['device_requests'] = [docker.types.DeviceRequest(count=-1, capabilities=[['gpu']])]
+
+            initial_container = docker_client.containers.create(**container_args)
             logger.info(f"Initial Docker container created: {initial_container.id}")
 
             # Start the container

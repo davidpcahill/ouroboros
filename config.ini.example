@@ -24,6 +24,7 @@ CPUQuota = 50000
 MinimumDiskSpaceGB = 50
 Timeout = 300
 NetworkAccess = false
+GPUAccess = false
 EnableCleanup = true
 KeepLastNImages = 5
 

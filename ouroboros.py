@@ -632,7 +632,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
                 current_container = docker_client.containers.create(
                     current_image.id,
                     command="tail -f /dev/null",  # Keep container running
-                    volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'ro'}},
+                    volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},  # Changed 'ro' to 'rw'
                     mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
                     cpu_period=100000,
                     cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),
@@ -720,7 +720,7 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
         initial_container = docker_client.containers.create(
             "python:3.9-slim",
             command="tail -f /dev/null",  # Keep container running
-            volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'ro'}},
+            volumes={os.path.abspath(exp_dir): {'bind': '/app', 'mode': 'rw'}},  # Changed 'ro' to 'rw'
             mem_limit=config.get('Docker', 'MemoryLimit', fallback='512m'),
             cpu_period=100000,
             cpu_quota=int(config.get('Docker', 'CPUQuota', fallback='50000')),

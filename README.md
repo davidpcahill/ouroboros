@@ -288,42 +288,6 @@ This system has significant capabilities and potential risks. Always run it in a
 ## Example Output
 
 ```
-2024-07-18 00:22:49,034 - INFO - ==================================================
-Experiment 2: Action 6/10 | Time remaining: 3527.12s2024-07-18 00:22:50,034 - INFO - Experiment 2: Action 6/10 | Time remaining: 3527.12s
-2024-07-18 00:22:50,035 - INFO - Preparing AI prompt for Experiment 2
-2024-07-18 00:22:50,035 - INFO - Current action: 6/10
-2024-07-18 00:22:50,035 - INFO - Time remaining: 3527.12 seconds
-2024-07-18 00:22:50,036 - INFO - Network access: Disabled
-2024-07-18 00:22:50,036 - INFO - GPU access: Disabled
-2024-07-18 00:22:50,036 - INFO - Action history: dockerfile (Installing numpy since it is u...), run (Performing a simple linear reg...), run (Implementing a basic Genetic A...), run (Fixing the error related to th...), run (Fixing the error related to pr...)
-2024-07-18 00:22:50,037 - INFO - Current Dockerfile:
-FROM python:3.9-slim
-WORKDIR /app
-RUN pip install numpy
-2024-07-18 00:22:50,038 - INFO - Sending request to AI - Action 6/10
-2024-07-18 00:22:50,140 - INFO - Sending request to OpenAI using model: gpt-4o with max_tokens: 4096
-2024-07-18 00:22:59,952 - INFO - OpenAI response received
-2024-07-18 00:22:59,953 - INFO - Full AI response:
-{
-    "action": "run",
-    "data": "# Basic Genetic Algorithm (GA) for optimizing a mathematical function\nimport numpy as np\n\n# Define the function to optimize (e.g., a simple quadratic function)\ndef objective_function(x):\n    return x ** 2\n\n# GA parameters\npopulation_size = 20\nnum_generations = 50\nmutation_rate = 0.01\n\n# Initialize the population with random values\npopulation = np.random.uniform(-10, 10, population_size)\n\n# Evolution process\nfor generation in range(num_generations):\n    # Evaluate the fitness of each individual\n    fitness = np.array([objective_function(ind) for ind in population])\n    \n    # Select individuals based on their fitness (roulette wheel selection)\n    total_fitness = np.sum(fitness)\n    selection_prob = fitness / total_fitness\n    selection_prob = selection_prob / np.sum(selection_prob)  # Ensure probabilities sum to 1\n    selected_indices = np.random.choice(range(population_size), size=population_size, p=selection_prob)\n    selected_population = population[selected_indices]\n\n    # Crossover (single-point crossover)\n    new_population = []\n    for i in range(0, population_size, 2):\n        parent1, parent2 = selected_population[i], selected_population[i + 1]\n        crossover_point = np.random.randint(1, 2)  # Fixing crossover point selection to avoid errors\n        child1 = np.concatenate([parent1[:crossover_point], parent2[crossover_point:]])\n        child2 = np.concatenate([parent2[:crossover_point], parent1[crossover_point:]])\n        new_population.extend([child1, child2])\n\n    # Mutation\n    new_population = np.array(new_population)\n    mutation_indices = np.random.rand(population_size, new_population.shape[1]) < mutation_rate\n    new_population[mutation_indices] += np.random.uniform(-1, 1, np.sum(mutation_indices))\n\n    # Update the population\n    population = new_population\n\n    # Print the best individual from the current generation\n    best_fitness = np.min(fitness)\n    best_individual = population[np.argmin(fitness)]\n    print(f'Generation {generation + 1}: Best Fitness = {best_fitness}, Best Individual = {best_individual}')\n\nprint('Finished Optimization')",
-    "notes": "Fixing the error related to the crossover point selection by ensuring the range is valid. This should allow the Genetic Algorithm to run correctly."
-}
-2024-07-18 00:23:00,836 - WARNING - Error output from code execution: Traceback (most recent call last):
-  File "<string>", line 33, in <module>
-IndexError: invalid index to scalar variable.
-
-2024-07-18 00:23:00,836 - INFO - Docker code execution completed
-2024-07-18 00:23:00,843 - INFO - Committed changes to Git: Experiment 2: Run code
-2024-07-18 00:23:00,843 - INFO - Code executed for experiment 2
-2024-07-18 00:23:00,844 - INFO - ==================================================
-2024-07-18 00:23:00,844 - INFO - Docker execution results for experiment 2:
-2024-07-18 00:23:00,844 - INFO -
-Error output:
-Traceback (most recent call last):
-  File "<string>", line 33, in <module>
-IndexError: invalid index to scalar variable.
-
 2024-07-18 00:23:00,844 - INFO - ==================================================
 Experiment 2: Action 7/10 | Time remaining: 3515.31s2024-07-18 00:23:01,844 - INFO - Experiment 2: Action 7/10 | Time remaining: 3515.31s
 2024-07-18 00:23:01,845 - INFO - Preparing AI prompt for Experiment 2

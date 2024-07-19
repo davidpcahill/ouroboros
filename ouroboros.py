@@ -25,8 +25,72 @@ from tqdm import tqdm
 from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 
+class MultilineConfigParser(configparser.ConfigParser):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.SECTCRE = re.compile(r"\[ *(?P<header>[^]]+?) *\]")
+
+    def _read_file(self, f, source=None):
+        """Parse a sectioned configuration file.
+
+        This method overrides the original method to handle multi-line values.
+        """
+        cursect = None
+        optname = None
+        lineno = 0
+        e = None
+        for line in f:
+            lineno += 1
+            if line.strip() == '' or line[0] in '#;':
+                continue
+            if line.startswith('"""'):
+                # Start of a multi-line value
+                value = line[3:]
+                for line in f:
+                    lineno += 1
+                    if line.strip().endswith('"""'):
+                        # End of multi-line value
+                        value += line[:-3]
+                        break
+                    value += line
+                self._handle_value(cursect, optname, value.strip())
+                optname = None
+            elif line[0].isspace() and cursect is not None and optname:
+                # Continuation line
+                value = line.strip()
+                self._handle_value(cursect, optname, value)
+            else:
+                # Regular line
+                mo = self.SECTCRE.match(line)
+                if mo:
+                    sectname = mo.group('header')
+                    if sectname in self._sections:
+                        cursect = self._sections[sectname]
+                    else:
+                        cursect = self._dict()
+                        self._sections[sectname] = cursect
+                    # So sections can't start with a continuation line
+                    optname = None
+                elif cursect is None:
+                    raise configparser.MissingSectionHeaderError(source, lineno, line)
+                else:
+                    mo = self._optcre.match(line)
+                    if mo:
+                        optname, vi, optval = mo.group('option', 'vi', 'value')
+                        optname = self.optionxform(optname.rstrip())
+                        if optval is not None:
+                            optval = optval.strip()
+                            self._handle_value(cursect, optname, optval)
+                    else:
+                        e = self._handle_error(e, source, lineno, line)
+        return self._sections
+
+    def _handle_value(self, cursect, optname, value):
+        if optname:
+            cursect[optname] = value
+
 # Load configuration
-config = configparser.ConfigParser()
+config = MultilineConfigParser()
 config.read('config.ini')
 
 # Initialize logging

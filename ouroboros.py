@@ -933,12 +933,13 @@ def run_ai_interaction_loop(experiment_id, prev_data, exp_dir, repo, access, doc
     return action_history, results, final_notes, current_dockerfile
 
 def run_experiment_cycle(docker_client):
+    experiment_id = get_last_experiment_id() + 1  # Initialize experiment_id at the start
     try:
         free_space = check_disk_space()
         min_space_gb = config.getint('Docker', 'MinimumDiskSpaceGB', fallback=10)
         if free_space < min_space_gb:
             logger.error(f"Not enough disk space to run experiment. Available: {free_space}GB, Required: {min_space_gb}GB. Aborting.")
-            return
+            return  # Early return if there's not enough disk space
 
         log_docker_resource_usage()
         cleanup_docker_resources()
@@ -946,7 +947,6 @@ def run_experiment_cycle(docker_client):
 
         logger.info("Starting new experiment cycle")
         access = read_access()
-        experiment_id = get_last_experiment_id() + 1
         logger.info(f"Experiment ID: {experiment_id}")
         
         ai_provider = config.get('AI', 'PROVIDER', fallback='claude').lower()
@@ -986,6 +986,7 @@ def run_experiment_cycle(docker_client):
     except Exception as e:
         logger.error(f"Error in experiment cycle: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
+    
     finally:
         logger.info(f"Experiment cycle {experiment_id} finished")
 

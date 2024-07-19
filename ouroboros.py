@@ -26,73 +26,23 @@ from tqdm import tqdm
 from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 
-class MultilineConfigParser(configparser.ConfigParser):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.SECTCRE = re.compile(r"\[ *(?P<header>[^]]+?) *\]")
+def read_config_with_multiline(filename):
+    with open(filename, 'r') as file:
+        config_string = file.read()
+    
+    # Find the PROMPT value and replace newlines with '\n'
+    prompt_match = re.search(r'PROMPT\s*=\s*"""(.*?)"""', config_string, re.DOTALL)
+    if prompt_match:
+        prompt_value = prompt_match.group(1)
+        escaped_prompt = prompt_value.replace('\n', '\\n')
+        config_string = config_string.replace(prompt_match.group(0), f'PROMPT = "{escaped_prompt}"')
+    
+    config = configparser.ConfigParser()
+    config.read_string(config_string)
+    return config
 
-    def _read_file(self, f, source=None):
-        """Parse a sectioned configuration file.
-
-        This method overrides the original method to handle multi-line values.
-        """
-        cursect = None
-        optname = None
-        lineno = 0
-        e = None
-        for line in f:
-            lineno += 1
-            if line.strip() == '' or line[0] in '#;':
-                continue
-            if line.startswith('"""'):
-                # Start of a multi-line value
-                value = line[3:]
-                for line in f:
-                    lineno += 1
-                    if line.strip().endswith('"""'):
-                        # End of multi-line value
-                        value += line[:-3]
-                        break
-                    value += line
-                self._handle_value(cursect, optname, value.strip())
-                optname = None
-            elif line[0].isspace() and cursect is not None and optname:
-                # Continuation line
-                value = line.strip()
-                self._handle_value(cursect, optname, value)
-            else:
-                # Regular line
-                mo = self.SECTCRE.match(line)
-                if mo:
-                    sectname = mo.group('header')
-                    if sectname in self._sections:
-                        cursect = self._sections[sectname]
-                    else:
-                        cursect = self._dict()
-                        self._sections[sectname] = cursect
-                    # So sections can't start with a continuation line
-                    optname = None
-                elif cursect is None:
-                    raise configparser.MissingSectionHeaderError(source, lineno, line)
-                else:
-                    mo = self._optcre.match(line)
-                    if mo:
-                        optname, vi, optval = mo.group('option', 'vi', 'value')
-                        optname = self.optionxform(optname.rstrip())
-                        if optval is not None:
-                            optval = optval.strip()
-                            self._handle_value(cursect, optname, optval)
-                    else:
-                        e = self._handle_error(e, source, lineno, line)
-        return self._sections
-
-    def _handle_value(self, cursect, optname, value):
-        if optname:
-            cursect[optname] = value
-
-# Load configuration
-config = MultilineConfigParser()
-config.read('config.ini')
+# Use the function to read the config file
+config = read_config_with_multiline('config.ini')
 
 # Initialize logging
 def setup_logging():

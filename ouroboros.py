@@ -26,6 +26,7 @@ from tqdm import tqdm
 from bs4 import BeautifulSoup
 from googleapiclient.discovery import build
 
+
 def read_config_with_multiline(filename):
     with open(filename, 'r') as file:
         config_string = file.read()
